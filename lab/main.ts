@@ -21,8 +21,15 @@ precision.addEventListener('pointerdown', () => (cam.precisionHeld = true))
 precision.addEventListener('pointerup', () => (cam.precisionHeld = false))
 precision.addEventListener('pointercancel', () => (cam.precisionHeld = false))
 
-cam.addEventListener('camsense-ready', (e) => log(`ready ${JSON.stringify((e as CustomEvent).detail)}`))
-cam.addEventListener('camsense-error', (e) => log(`error ${(e as CustomEvent).detail.message}`))
+cam.addEventListener('camsense-ready', (e) => {
+  started = true
+  go.textContent = 'סרוק'
+  log(`ready ${JSON.stringify((e as CustomEvent).detail)}`)
+})
+cam.addEventListener('camsense-error', (e) => {
+  log(`error ${(e as CustomEvent).detail.message}`)
+  if (!started) go.textContent = 'הפעל מצלמה שוב'
+})
 cam.addEventListener('camsense-label', (e) => {
   const { label, started } = (e as CustomEvent).detail
   if (started) log(`label ${label.index + 1}: ${label.lines.map((l: { text: string }) => l.text).join(' | ')}`)
@@ -42,12 +49,8 @@ cam.addEventListener('camsense-result', async (e) => {
 })
 
 go.addEventListener('click', async () => {
-  if (!started) {
-    await cam.start()
-    started = true
-    go.textContent = 'סרוק'
-    return
-  }
+  // Until the camera is open, the button opens it (again, after an error).
+  if (!started) return cam.start()
   if (cam.continuous && go.textContent === 'סיים') return cam.stop()
   if (cam.continuous) go.textContent = 'סיים'
   await cam.scan()
