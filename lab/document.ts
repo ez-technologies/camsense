@@ -2,7 +2,7 @@
 // lines them up and merges them; "send" keeps everything on the computer (POST /api/samples) for study
 // (flattening and reading are done there).
 import '../src/index'
-import { cropToPage, loadUnwarp, unwarpPage, type CamsenseScanner, type FocusStackResult } from '../src/index'
+import { cropToPage, loadUnwarp, stretchToEdges, unwarpPage, type CamsenseScanner, type FocusStackResult } from '../src/index'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const cam = $<CamsenseScanner>('cam')
@@ -64,7 +64,7 @@ go.addEventListener('click', async () => {
     await loadUnwarp('/research/uvdoc.onnx')
     const t0 = performance.now()
     // Flattened, then trimmed to the page alone.
-    flat = cropToPage(await unwarpPage(toCanvas()))
+    flat = cropToPage(stretchToEdges(await unwarpPage(toCanvas())))
     flattenMs = Math.round(performance.now() - t0)
     // The flattened page is the result: shown first, above the merged picture and the frames.
     result.prepend(title(`הדף המיושר (${flattenMs} ms)`), figure(flat.toDataURL('image/jpeg', 0.9), ''))
