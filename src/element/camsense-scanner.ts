@@ -25,6 +25,7 @@ import { startMotion, SteadyGate } from '../core/motion'
 import { hasWebGpu, LATIN_LABELS, loadEngine, setAssetsBase, type Engine, type ModelSet } from '../core/ocr/engine'
 import { optionsFor, type ScanOptions, type Target } from '../core/options'
 import { bestShot } from '../core/photo'
+import { joinRows } from '../core/rows'
 import { stackFocus, type FrameFit } from '../core/focusstack'
 import { Picture } from '../core/pictures'
 import {
@@ -485,9 +486,11 @@ export class CamsenseScanner extends HTMLElement {
     const r = await runScan(this.video, engine, s, (p) => this.drawBoxes(p), this.stopFlag, focuser, undefined, (st) => this.showSteady(st), this.precision)
     this.lastLog = { frameLog: r.frameLog, focusSearches: r.sweeps }
     if (r.reads.length) this.signal()
+    // Models that find words (Hebrew) give words: they are joined into the rows they stand in, nearest first.
+    const reads = this.models.rtl ? joinRows(r.reads, true).sort((a, b) => (a.d ?? Infinity) - (b.d ?? Infinity)) : r.reads
     return {
       task: 'text',
-      lines: r.reads.map((v) => ({ text: v.text, words: words(v.text), confidence: Math.round(v.confidence * 1000) / 1000, dist: v.d ?? null })),
+      lines: reads.map((v) => ({ text: v.text, words: words(v.text), confidence: Math.round(v.confidence * 1000) / 1000, dist: v.d ?? null })),
       picture: new Picture(r.original),
     }
   }

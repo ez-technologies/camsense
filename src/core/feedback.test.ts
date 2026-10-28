@@ -17,7 +17,7 @@ describe('parseFeedback', () => {
 
 describe('progressLine', () => {
   it('fills in the numbers', () => {
-    expect(progressLine(PROGRESS_TEXT, 'capture', 3, 7)).toBe('Picture 3 of 7')
+    expect(progressLine(PROGRESS_TEXT, 'capture', 3, 7)).toBe('Hold still')
     expect(progressLine({ ...PROGRESS_TEXT, capture: 'תמונה {done} מתוך {total}' }, 'capture', 1, 5)).toBe('תמונה 1 מתוך 5')
   })
 })

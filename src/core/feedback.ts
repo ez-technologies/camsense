@@ -33,12 +33,15 @@ export function beep(audio: AudioContext) {
 /** What a scan is doing, for the progress shown over the picture and the `camsense-progress` event. */
 export type Phase = 'steady' | 'capture' | 'merge' | 'flatten' | 'read'
 
-/** Words shown for each phase; `{done}` and `{total}` are replaced. The app may set its own (another language). */
+/**
+ * Words shown for each phase; `{done}` and `{total}` are replaced. The app may set its own (another
+ * language). While pictures are taken the bar shows how far along; the words only ask to hold still.
+ */
 export type ProgressText = Record<Phase, string>
 
 export const PROGRESS_TEXT: ProgressText = {
   steady: 'Hold still',
-  capture: 'Picture {done} of {total}',
+  capture: 'Hold still',
   merge: 'Merging',
   flatten: 'Flattening',
   read: 'Reading',

@@ -33,7 +33,7 @@ const TEXT = {
     open: 'הפעל מצלמה', scan: 'סרוק', opening: 'פותח מצלמה…', ready: 'מוכן', scanning: 'סורק…',
     nothing: 'לא נמצא כלום, נסה שוב', error: 'שגיאה', save: 'שמור תמונה', took: 'זמן', ms: 'מ״ש',
     labLink: 'מעבדה (כל ההגדרות)', model: 'בפעם הראשונה יורד מודל היישור (32MB)',
-    progress: { steady: 'החזק יציב', capture: 'תמונה {done} מתוך {total}', merge: 'מאחד', flatten: 'מיישר', read: 'קורא טקסט' },
+    progress: { steady: 'החזק יציב', capture: 'החזק יציב', merge: 'מאחד', flatten: 'מיישר', read: 'קורא טקסט' },
     mirror: 'כתב מראה', readLang: 'קריאה:', latin: 'אנגלית ומספרים', hebrew: 'עברית, אנגלית ומספרים',
     fromCross: 'מהצלב', px: 'פיקסלים', line: 'שורה', fromRight: 'מימין', fromLeft: 'משמאל', textTitle: 'הטקסט שנקרא',
     readModel: 'בפעם הראשונה יורד מודל הקריאה בעברית', clear: 'נקה',
@@ -50,7 +50,7 @@ const TEXT = {
     open: 'Open camera', scan: 'Scan', opening: 'Opening the camera…', ready: 'Ready', scanning: 'Scanning…',
     nothing: 'Nothing found, try again', error: 'Error', save: 'Save picture', took: 'Took', ms: 'ms',
     labLink: 'Lab (every setting)', model: 'The first time, the flattening model downloads (32 MB)',
-    progress: { steady: 'Hold still', capture: 'Picture {done} of {total}', merge: 'Merging', flatten: 'Flattening', read: 'Reading the text' },
+    progress: { steady: 'Hold still', capture: 'Hold still', merge: 'Merging', flatten: 'Flattening', read: 'Reading the text' },
     mirror: 'Mirror', readLang: 'Read:', latin: 'English and digits', hebrew: 'Hebrew, English and digits',
     fromCross: 'from the cross', px: 'px', line: 'Line', fromRight: 'from the right', fromLeft: 'from the left', textTitle: 'Text read',
     readModel: 'The first time, the Hebrew reading model downloads', clear: 'Clear',
@@ -130,6 +130,7 @@ const HEBREW: ModelSet = {
   db: { thresh: 0.3, boxThresh: 0.35, unclip: 1.3 },
 }
 const LATIN = cam.models
+let tess: Promise<Worker> | null = null
 let readHebrew = localStorage.getItem('camsense.readHebrew') === '1'
 const readLang = $<HTMLSelectElement>('readLang')
 readLang.value = readHebrew ? 'he' : 'latin'
@@ -194,6 +195,11 @@ cam.addEventListener('camsense-ready', () => {
   ready = true
   status.textContent = t().ready
   render()
+  // Pages: the flattening model and the reader are fetched and prepared while the user aims, not after the scan.
+  if (TABS[tab].range) {
+    loadUnwarp(`${R}uvdoc.onnx`).catch(() => {})
+    tess ??= createWorker(['heb', 'eng'])
+  }
 })
 cam.addEventListener('camsense-error', (e) => {
   status.textContent = `${t().error}: ${(e as CustomEvent).detail.message}`
@@ -249,8 +255,6 @@ go.addEventListener('click', async () => {
     go.disabled = false
   }
 })
-
-let tess: Promise<Worker> | null = null
 
 /** A page: focus steps over the range, merged, flattened, stretched to its edges, trimmed, then read. */
 async function scanPage([near, far]: [number, number], entry: HTMLElement) {
