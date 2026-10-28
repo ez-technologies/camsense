@@ -24,7 +24,7 @@ import { startMotion, SteadyGate } from '../core/motion'
 import { hasWebGpu, loadEngine, setAssetsBase, type Engine } from '../core/ocr/engine'
 import { optionsFor, type ScanOptions, type Target } from '../core/options'
 import { bestShot } from '../core/photo'
-import { stackFocus } from '../core/focusstack'
+import { stackFocus, type FrameFit } from '../core/focusstack'
 import { Picture } from '../core/pictures'
 import {
   AIM_H,
@@ -106,6 +106,8 @@ export interface FocusStackResult {
   share: number[]
   /** How far each frame had moved (the hand), in pixels, before it was lined up. */
   shifts: { dx: number; dy: number }[]
+  /** Per frame: used or left out (blurred, mismatch), its size change and move, and its edge match. */
+  fits: FrameFit[]
   ms: number
 }
 
@@ -315,7 +317,7 @@ export class CamsenseScanner extends HTMLElement {
    * moved from near to far (in even steps of dioptres), and merged so every part comes from its
    * sharpest frame. Where the page cannot move the lens, the frames are taken as they come.
    */
-  async focusStack(o: { steps?: number; near?: number; far?: number; settleFrames?: number } = {}): Promise<FocusStackResult | null> {
+  async focusStack(o: { steps?: number; near?: number; far?: number; settleFrames?: number; maxSide?: number } = {}): Promise<FocusStackResult | null> {
     if (!this.track || this.running) return null
     this.running = true
     const t0 = performance.now()
@@ -346,7 +348,8 @@ export class CamsenseScanner extends HTMLElement {
           // Even in dioptres (1/distance): the near range, where focus changes fastest, gets more steps.
           const d = 1 / (1 / near - (i / Math.max(1, steps - 1)) * (1 / near - 1 / far))
           if (await setFocus(this.track, d)) distance = Math.round(d * 1000) / 1000
-          for (let k = 0; k < (o.settleFrames ?? 2); k++) await nextFrame()
+          // The lens takes a few frames to arrive: a frame taken while it moves is blurred everywhere.
+          for (let k = 0; k < (o.settleFrames ?? 3); k++) await nextFrame()
         } else {
           await nextFrame()
         }
@@ -354,7 +357,7 @@ export class CamsenseScanner extends HTMLElement {
         canvases.push(frame)
         frames.push({ picture: new Picture(frame), distance, sharpness: 0, ms: Math.round(performance.now() - t1) })
       }
-      const merged = stackFocus(canvases)
+      const merged = stackFocus(canvases, { maxSide: o.maxSide ?? 1600 })
       merged.share.forEach((_, i) => (frames[i].sharpness = merged.share[i]))
       signal(this.audio)
       return {
@@ -363,6 +366,7 @@ export class CamsenseScanner extends HTMLElement {
         stacked: new Picture(merged.canvas),
         share: merged.share,
         shifts: merged.shifts,
+        fits: merged.fits,
         ms: Math.round(performance.now() - t0),
       }
     } finally {

@@ -58,7 +58,7 @@ export function blendWeights(sharp: Float32Array[], tx: number, ty: number, powe
  * differ in brightness detail but not in where the edges are. Coarse to fine: a search on a picture an
  * eighth the size, then refined at a quarter, a half and full size.
  */
-export function estimateShift(ref: Float32Array, img: Float32Array, w: number, h: number, maxShift = 48): { dx: number; dy: number } {
+export function estimateShift(ref: Float32Array, img: Float32Array, w: number, h: number, maxShift = 48): { dx: number; dy: number; c: number } {
   const pyramid = new Map<number, { a: Float32Array; b: Float32Array; sw: number; sh: number }>()
   const level = (f: number) => {
     if (!pyramid.has(f)) {
@@ -119,7 +119,7 @@ export function estimateShift(ref: Float32Array, img: Float32Array, w: number, h
   const chosen = finals
     .filter((f) => f.c <= bestCost * 1.03)
     .reduce((p, q) => (Math.hypot(q.dx, q.dy) < Math.hypot(p.dx, p.dy) ? q : p))
-  return { dx: chosen.dx, dy: chosen.dy }
+  return { dx: chosen.dx, dy: chosen.dy, c: chosen.c }
 }
 
 function shrink(g: Float32Array, w: number, h: number, f: number): Float32Array {
@@ -147,18 +147,6 @@ function edges(g: Float32Array, w: number, h: number): Float32Array {
   return out
 }
 
-/** A copy of `c` moved back by (dx, dy), so it lines up with the reference frame. */
-function shifted(c: HTMLCanvasElement, dx: number, dy: number): HTMLCanvasElement {
-  if (!dx && !dy) return c
-  const o = document.createElement('canvas')
-  o.width = c.width
-  o.height = c.height
-  const ctx = o.getContext('2d', { willReadFrequently: true })!
-  ctx.drawImage(c, 0, 0)
-  ctx.drawImage(c, -dx, -dy)
-  return o
-}
-
 function grayOf(c: HTMLCanvasElement): Float32Array {
   const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data
   const g = new Float32Array(c.width * c.height)
@@ -166,18 +154,149 @@ function grayOf(c: HTMLCanvasElement): Float32Array {
   return g
 }
 
+export interface FrameFit {
+  /** Kept in the merge; false when blurred everywhere or not lining up with the others. */
+  used: boolean
+  why?: 'blurred' | 'mismatch'
+  /** Size change (focus breathing: the picture grows a little as the lens focuses nearer) and move. */
+  scale: number
+  dx: number
+  dy: number
+  /** How well its edges match the reference frame after lining up (1 = the same). */
+  match: number
+}
+
+export interface StackOptions {
+  tile?: number
+  align?: boolean
+  maxShift?: number
+  /** Frames are merged at this longest side (merging at full camera size is slow on a phone). */
+  maxSide?: number
+  /** Size changes tried for focus breathing. */
+  scales?: number[]
+  /** Below this edge match a frame is left out rather than risk doubled text. */
+  minMatch?: number
+}
+
+function resized(c: HTMLCanvasElement, maxSide: number): HTMLCanvasElement {
+  const k = Math.min(1, maxSide / Math.max(c.width, c.height))
+  if (k === 1) return c
+  const o = document.createElement('canvas')
+  o.width = Math.round(c.width * k)
+  o.height = Math.round(c.height * k)
+  const ctx = o.getContext('2d', { willReadFrequently: true })!
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(c, 0, 0, o.width, o.height)
+  return o
+}
+
+/** `c` grown by `scale` about its centre and moved back by (dx, dy). */
+function transformed(c: HTMLCanvasElement, scale: number, dx: number, dy: number): HTMLCanvasElement {
+  if (scale === 1 && !dx && !dy) return c
+  const o = document.createElement('canvas')
+  o.width = c.width
+  o.height = c.height
+  const ctx = o.getContext('2d', { willReadFrequently: true })!
+  ctx.drawImage(c, 0, 0)
+  ctx.translate(c.width / 2 - dx, c.height / 2 - dy)
+  ctx.scale(1 / scale, 1 / scale)
+  ctx.drawImage(c, -c.width / 2, -c.height / 2)
+  return o
+}
+
+/** Correlation (-1..1) of two edge maps of the same size, on an eighth-size copy. */
+function edgeMatch(a: Float32Array, b: Float32Array, w: number, h: number): number {
+  const sw = Math.floor(w / 8)
+  const sh = Math.floor(h / 8)
+  const ea = edges(shrink(a, w, h, 8), sw, sh)
+  const eb = edges(shrink(b, w, h, 8), sw, sh)
+  let ma = 0
+  let mb = 0
+  const n = sw * sh
+  for (let i = 0; i < n; i++) {
+    ma += ea[i]
+    mb += eb[i]
+  }
+  ma /= n
+  mb /= n
+  let sab = 0
+  let saa = 0
+  let sbb = 0
+  for (let i = 0; i < n; i++) {
+    const x = ea[i] - ma
+    const y = eb[i] - mb
+    sab += x * y
+    saa += x * x
+    sbb += y * y
+  }
+  return sab / Math.sqrt(saa * sbb || 1)
+}
+
 /**
- * Merges frames of one size. A hand that shook a little between frames is undone first: each frame is
- * moved to line up with the middle one (`align`, up to `maxShift` pixels).
+ * Merges frames of one scene focused at different distances:
+ * 1. shrinks them to `maxSide`;
+ * 2. leaves out frames blurred everywhere (taken while the lens was still moving);
+ * 3. lines each frame up with the sharpest one, for size (focus breathing) and move (a shaking hand);
+ * 4. leaves out frames whose edges still do not match (better a softer region than doubled text);
+ * 5. merges tile by tile, each part from its sharpest frame.
  */
-export function stackFocus(input: HTMLCanvasElement[], tile = 32, align = true, maxShift = 48): StackResult & { shifts: { dx: number; dy: number }[] } {
-  const w = input[0].width
-  const h = input[0].height
-  const grays = input.map(grayOf)
-  const ref = Math.floor(input.length / 2)
-  const shifts = input.map((_, i) => (align && i !== ref ? estimateShift(grays[ref], grays[i], w, h, maxShift) : { dx: 0, dy: 0 }))
-  const frames = input.map((f, i) => shifted(f, shifts[i].dx, shifts[i].dy))
-  const sharp = frames.map((f, i) => tileSharpness(shifts[i].dx || shifts[i].dy ? grayOf(f) : grays[i], w, h, tile))
+export function stackFocus(input: HTMLCanvasElement[], o: StackOptions = {}): StackResult & { fits: FrameFit[]; shifts: { dx: number; dy: number }[] } {
+  const tile = o.tile ?? 32
+  const sized = input.map((c) => resized(c, o.maxSide ?? 2000))
+  const w = sized[0].width
+  const h = sized[0].height
+  const grays = sized.map(grayOf)
+  // Overall sharpness of each frame: the sharpest of its 6x6 regions, and the median of them.
+  const region = Math.ceil(Math.max(w, h) / 6)
+  const overall = grays.map((g) => {
+    const v = [...tileSharpness(g, w, h, region).values].sort((p, q) => p - q)
+    return { max: v[v.length - 1], median: v[Math.floor(v.length / 2)] }
+  })
+  const maxes = overall.map((x) => x.max).sort((p, q) => p - q)
+  const typical = maxes[Math.floor(maxes.length / 2)]
+  const ref = overall.reduce((best, x, i) => (x.median > overall[best].median ? i : best), 0)
+  const fits: FrameFit[] = sized.map((_, i) =>
+    overall[i].max < typical * 0.25 && i !== ref
+      ? { used: false, why: 'blurred', scale: 1, dx: 0, dy: 0, match: 0 }
+      : { used: true, scale: 1, dx: 0, dy: 0, match: 1 },
+  )
+  const frames = [...sized]
+  if (o.align !== false) {
+    // The size change is chosen on quarter-size copies (quick); the move is then found on half-size
+    // copies for that size only, and applied at full size.
+    const small = (c: HTMLCanvasElement, f: number) => grayOf(resized(c, Math.max(w, h) / f))
+    const qw = Math.round(w / 4)
+    const qh = Math.round(h / 4)
+    const hw = Math.round(w / 2)
+    const hh = Math.round(h / 2)
+    const refQ = small(sized[ref], 4)
+    const refH = small(sized[ref], 2)
+    for (let i = 0; i < sized.length; i++) {
+      if (i === ref || !fits[i].used) continue
+      let pick = { scale: 1, c: Infinity }
+      for (const scale of o.scales ?? [0.98, 0.99, 1, 1.01, 1.02]) {
+        const sh = estimateShift(refQ, small(transformed(sized[i], scale, 0, 0), 4), qw, qh, (o.maxShift ?? 48) / 4)
+        if (sh.c < pick.c) pick = { scale, c: sh.c }
+      }
+      const sh = estimateShift(refH, small(transformed(sized[i], pick.scale, 0, 0), 2), hw, hh, (o.maxShift ?? 48) / 2)
+      const best = { scale: pick.scale, dx: sh.dx * 2, dy: sh.dy * 2 }
+      frames[i] = transformed(sized[i], best.scale, best.dx, best.dy)
+      const match = Math.round(edgeMatch(grays[ref], grayOf(frames[i]), w, h) * 100) / 100
+      fits[i] = { used: match >= (o.minMatch ?? 0.6), why: match >= (o.minMatch ?? 0.6) ? undefined : 'mismatch', scale: best.scale, dx: best.dx, dy: best.dy, match }
+    }
+  }
+  const usedIdx = fits.map((f, i) => (f.used ? i : -1)).filter((i) => i >= 0)
+  const merged = mergeTiles(usedIdx.map((i) => frames[i]), tile)
+  const share = fits.map(() => 0)
+  usedIdx.forEach((i, k) => (share[i] = merged.share[k]))
+  return { ...merged, share, fits, shifts: fits.map((f) => ({ dx: f.dx, dy: f.dy })) }
+}
+
+/** Tile by tile, each part of the picture from its sharpest frame, with smooth weights between tiles. */
+function mergeTiles(frames: HTMLCanvasElement[], tile: number): StackResult {
+  const w = frames[0].width
+  const h = frames[0].height
+  const sharp = frames.map((f) => tileSharpness(grayOf(f), w, h, tile))
   const { tx, ty } = sharp[0]
   const weights = blendWeights(
     sharp.map((s) => s.values),
@@ -229,5 +348,5 @@ export function stackFocus(input: HTMLCanvasElement[], tile = 32, align = true, 
     choice.push(best)
     share[best]++
   }
-  return { canvas: out, choice, tilesX: tx, tilesY: ty, share: share.map((c) => Math.round((c / (tx * ty)) * 100) / 100), shifts }
+  return { canvas: out, choice, tilesX: tx, tilesY: ty, share: share.map((c) => Math.round((c / (tx * ty)) * 100) / 100) }
 }
