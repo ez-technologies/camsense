@@ -79,6 +79,31 @@ camera.run({
   each line's box and distance from it; per frame: sharpness, motion, timings of each step, what was read
   and with what confidence; focus searches. This is what the POC's lab saved and what made every fix
   possible.
+- **File format and size, chosen by the app** when it asks for the file:
+
+  ```ts
+  const file = await sample.images.best.toBlob({ purpose: 'record' })              // a ready preset
+  const file = await sample.images.best.toBlob({ format: 'webp', maxSide: 1024, quality: 0.8 })
+  ```
+
+  | Format | Size | Where it works | For |
+  |---|---|---|---|
+  | `jpeg` | small | every browser | the default; quality 0–1 |
+  | `webp` | 25–35% smaller than JPEG at the same quality | Chrome, Android, Firefox; Safari may not make it | smaller uploads; falls back to JPEG, and says so |
+  | `png` | 5–10 times JPEG | every browser | lossless: training, or fine detail such as engraving |
+  | `pixels` | in memory only (ImageData / ImageBitmap) | every browser | the app processes the picture itself; no conversion at all |
+
+  `maxSide` (longest side in pixels) shrinks the picture before it is made into a file; `quality` sets
+  the compression of JPEG and WebP; the result is a `Blob` (to save or upload) or a data URL (to show).
+
+  **Purpose presets**, so an app does not have to know the numbers:
+
+  | Purpose | Makes | About |
+  |---|---|---|
+  | `thumbnail` | JPEG, longest side 320, quality 0.75 | 15–30 KB, for lists |
+  | `record` | WebP (else JPEG), longest side 1280, quality 0.8 | 100–200 KB, to keep with an item as documentation |
+  | `sample` | WebP (else JPEG), longest side 1600, quality 0.85 | production samples for study |
+  | `training` | PNG, full size | lossless, for training a model |
 - **Pictures never delay the result.** The frames are already in memory; the result comes back at once
   with references to them. Turning a picture into a file (JPEG/WebP, roughly 20–80 ms per picture on a
   phone) happens only when the app asks (`image.toBlob()`), after the user has had the beep. The library
