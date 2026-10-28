@@ -24,6 +24,7 @@ import { startMotion, SteadyGate } from '../core/motion'
 import { hasWebGpu, loadEngine, setAssetsBase, type Engine } from '../core/ocr/engine'
 import { optionsFor, type ScanOptions, type Target } from '../core/options'
 import { bestShot } from '../core/photo'
+import { stackFocus } from '../core/focusstack'
 import { Picture } from '../core/pictures'
 import {
   AIM_H,
@@ -94,6 +95,17 @@ export interface PhotoResult {
 }
 
 export type Result = TextResult | BarcodeResult | PhotoResult
+
+/** A focus stack: frames focused near to far, and the merged picture. */
+export interface FocusStackResult {
+  /** False when the browser does not let the page move the lens: the frames are then all alike. */
+  focusControl: boolean
+  frames: { picture: Picture; distance: number | null; sharpness: number; ms: number }[]
+  stacked: Picture
+  /** Share of the picture each frame gave most of. */
+  share: number[]
+  ms: number
+}
 
 const STYLE = `
 :host { display: block; position: relative; overflow: hidden; background: #000; border-radius: var(--camsense-radius, 12px);
@@ -292,6 +304,53 @@ export class CamsenseScanner extends HTMLElement {
       this.boxesEl.replaceChildren()
       this.aimEl.classList.remove('moving')
       this.aimAt(null)
+      if (this.track && canSweepFocus(this.caps)) setFocus(this.track, null)
+    }
+  }
+
+  /**
+   * Focus stack, for a page at a slant: the phone held still, `steps` frames are taken with the lens
+   * moved from near to far (in even steps of dioptres), and merged so every part comes from its
+   * sharpest frame. Where the page cannot move the lens, the frames are taken as they come.
+   */
+  async focusStack(o: { steps?: number; near?: number; far?: number; settleFrames?: number } = {}): Promise<FocusStackResult | null> {
+    if (!this.track || this.running) return null
+    this.running = true
+    const t0 = performance.now()
+    try {
+      const s = this.settings
+      const steps = o.steps ?? 5
+      const control = canSweepFocus(this.caps)
+      const min = this.caps.focusDistance?.min ?? 0.1
+      const max = this.caps.focusDistance?.max ?? 1
+      const near = Math.max(min, o.near ?? s.distance[0] * 0.7)
+      const far = Math.min(max, o.far ?? s.distance[1] * 1.8)
+      const video = this.video
+      const nextFrame = () =>
+        new Promise<void>((r) => ('requestVideoFrameCallback' in video ? video.requestVideoFrameCallback(() => r()) : setTimeout(r, 33)))
+      const frames: FocusStackResult['frames'] = []
+      const canvases: HTMLCanvasElement[] = []
+      for (let i = 0; i < steps; i++) {
+        const t1 = performance.now()
+        let distance: number | null = null
+        if (control) {
+          // Even in dioptres (1/distance): the near range, where focus changes fastest, gets more steps.
+          const d = 1 / (1 / near - (i / Math.max(1, steps - 1)) * (1 / near - 1 / far))
+          if (await setFocus(this.track, d)) distance = Math.round(d * 1000) / 1000
+          for (let k = 0; k < (o.settleFrames ?? 2); k++) await nextFrame()
+        } else {
+          await nextFrame()
+        }
+        const frame = grab(video, frameRegion(video, s), Infinity)
+        canvases.push(frame)
+        frames.push({ picture: new Picture(frame), distance, sharpness: 0, ms: Math.round(performance.now() - t1) })
+      }
+      const merged = stackFocus(canvases)
+      merged.share.forEach((_, i) => (frames[i].sharpness = merged.share[i]))
+      signal(this.audio)
+      return { focusControl: control, frames, stacked: new Picture(merged.canvas), share: merged.share, ms: Math.round(performance.now() - t0) }
+    } finally {
+      this.running = false
       if (this.track && canSweepFocus(this.caps)) setFocus(this.track, null)
     }
   }

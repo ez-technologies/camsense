@@ -74,6 +74,7 @@ All of them: `ScanOptions` in `src/core/options.ts`.
 | `start()` | open the camera and prepare; call from a tap |
 | `scan()` | run the task; single scans resolve with the result |
 | `stop()` | end a continuous scan (its result follows) |
+| `focusStack({ steps, near, far })` | for a page at a slant: frames focused near to far (where the page can move the lens), merged so each part comes from its sharpest frame |
 | `setTorch(on)`, `torchAvailable` | torch (Android) |
 | `precisionHeld` | `true` while the app's precision button is held: only the line under the middle cross |
 | `aimAt({ fx, fy } \| null)` | move the cross (shares of the element's size) |
