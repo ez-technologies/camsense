@@ -53,6 +53,7 @@ has **no buttons**: the app draws its own and sets the element from code.
 | `magnification` | 1–4 |
 | `gpu` | `off` to keep to the main processor |
 | `touch` | `none` to ignore touches (default: a touch moves the cross there until the scan ends) |
+| `mirror` | `on`: the text is a mirror image (scanning through glass from behind) · `auto`: it may be, try doubtful lines mirrored too · `off` (default) |
 
 ### Some options (`cam.options = { ... }`)
 

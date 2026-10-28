@@ -13,6 +13,7 @@ let torch = false
 
 $('task').addEventListener('change', (e) => cam.setAttribute('task', (e.target as HTMLSelectElement).value))
 $('target').addEventListener('change', (e) => cam.setAttribute('target', (e.target as HTMLSelectElement).value))
+$('mirror').addEventListener('change', (e) => cam.setAttribute('mirror', (e.target as HTMLSelectElement).value))
 $('continuous').addEventListener('change', (e) => cam.toggleAttribute('continuous', (e.target as HTMLInputElement).checked))
 $('zoom').addEventListener('click', () => (cam.magnification = cam.magnification >= 3 ? 1 : cam.magnification + 1))
 $('torch').addEventListener('click', async () => log(`torch: ${(await cam.setTorch((torch = !torch))) ? (torch ? 'on' : 'off') : 'not available'}`))

@@ -115,7 +115,7 @@ video { width: 100%; height: 100%; object-fit: cover; display: block; transform-
 `
 
 /** Settings the element reads from attributes. */
-const ATTRS = ['target', 'task', 'continuous', 'assets', 'formats', 'magnification', 'gpu', 'images', 'touch'] as const
+const ATTRS = ['target', 'task', 'continuous', 'assets', 'formats', 'magnification', 'gpu', 'images', 'touch', 'mirror'] as const
 
 export class CamsenseScanner extends HTMLElement {
   static observedAttributes = [...ATTRS]
@@ -189,6 +189,9 @@ export class CamsenseScanner extends HTMLElement {
     const mag = this.getAttribute('magnification')
     if (mag) s.viewZoom = Number(mag)
     if (this.getAttribute('gpu') === 'off') s.gpu = false
+    // mirror="on" | "auto": the text may be a mirror image (seen through glass from behind).
+    const mirror = this.getAttribute('mirror')
+    if (mirror === 'on' || mirror === 'auto' || mirror === 'off') s.mirror = mirror
     return s
   }
 
