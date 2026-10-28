@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>מסמך באלכסון: פוקוס מדורג</title>
+    <style>
+      body { margin: 0; padding: 10px; background: #111; color: #eee; font: 15px system-ui, sans-serif; }
+      camsense-scanner { width: 100%; --camsense-aspect: 3 / 4; }
+      .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; align-items: center; }
+      button, select, input { font: inherit; padding: 8px 12px; border-radius: 10px; border: 1px solid #444; background: #2a2a2a; color: #eee; }
+      input { width: 100%; box-sizing: border-box; }
+      button.big { width: 100%; padding: 16px; font-size: 20px; background: #1565c0; border: none; }
+      button.send { background: #2e7d32; }
+      .frames { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+      figure { margin: 0; font-size: 12px; color: #aaa; }
+      img { width: 100%; border-radius: 6px; display: block; }
+      h3 { margin: 14px 0 6px; font-size: 16px; }
+      .meta { color: #999; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <h3>מסמך שלם, באלכסון</h3>
+    <camsense-scanner id="cam" target="document" task="photo"></camsense-scanner>
+    <div class="row">
+      <label>צעדי פוקוס <select id="steps"><option>3</option><option selected>5</option><option>7</option></select></label>
+      <button id="torch">פנס</button>
+    </div>
+    <input id="note" placeholder="הערה (למשל: קבלה מקומטת, 40 מעלות)" />
+    <p class="meta">כל הדף בתוך התמונה, הטלפון יציב. כל צעד מצלם בפוקוס אחר, והתמונות מתחברות לתמונה אחת חדה.</p>
+    <button class="big" id="go">הפעל מצלמה</button>
+    <p class="meta" id="status"></p>
+    <div id="result"></div>
+    <script type="module" src="./document.ts"></script>
+  </body>
+</html>
