@@ -1,0 +1,26 @@
+{
+  "name": "camsense",
+  "version": "0.1.0",
+  "description": "Camera recognition for the browser: text, barcodes and the sharpest photo, on the phone",
+  "type": "module",
+  "license": "MIT",
+  "repository": "github:ez-technologies/camsense",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "models", "scripts/copy-assets.mjs"],
+  "bin": { "camsense-copy-assets": "./scripts/copy-assets.mjs" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "onnxruntime-web": "^1.31.1"
+  },
+  "devDependencies": {
+    "typescript": "~7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
