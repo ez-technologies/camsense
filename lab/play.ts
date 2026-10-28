@@ -75,6 +75,8 @@ cam.setAttribute('assets', `${import.meta.env.BASE_URL}camsense/`)
 let lang: Lang = (localStorage.getItem('camsense.lang') as Lang) || 'he'
 let tab: Tab = (localStorage.getItem('camsense.tab') as Tab) || 'code'
 let ready = false
+/** The camera could not be opened (refused, or held elsewhere): the big button then tries again. */
+let failed = false
 let busy = false
 let torch = false
 const t = () => TEXT[lang]
@@ -92,7 +94,8 @@ function render() {
   })
   $('whenDone').textContent = t().whenDone
   $('hint').textContent = t().hint[tab]
-  go.textContent = ready ? t().scan : t().open
+  go.textContent = failed ? t().open : t().scan
+  go.disabled = busy || (!ready && !failed)
   cam.progressText = t().progress as ProgressText
 }
 
@@ -193,6 +196,7 @@ $('clear').addEventListener('click', () => result.replaceChildren())
 
 cam.addEventListener('camsense-ready', () => {
   ready = true
+  failed = false
   status.textContent = t().ready
   render()
   // Pages: the flattening model and the reader are fetched and prepared while the user aims, not after the scan.
@@ -208,9 +212,15 @@ cam.addEventListener('camsense-paused', () => {
 })
 cam.addEventListener('camsense-error', (e) => {
   status.textContent = `${t().error}: ${(e as CustomEvent).detail.message}`
+  if (!ready) {
+    failed = true
+    render()
+  }
 })
 
 async function open() {
+  failed = false
+  render()
   status.textContent = t().opening
   await cam.start()
 }
@@ -228,7 +238,7 @@ go.addEventListener('click', async () => {
   if (busy) return
   if (!ready) return open()
   busy = true
-  go.disabled = true
+  render()
   status.textContent = t().scanning
   const t0 = performance.now()
   // Each scan is added on top; earlier ones stay below until "clear".
@@ -257,7 +267,7 @@ go.addEventListener('click', async () => {
     } else status.textContent = t().nothing
   } finally {
     busy = false
-    go.disabled = false
+    render()
   }
 })
 
@@ -311,3 +321,5 @@ async function scanPage([near, far]: [number, number], entry: HTMLElement) {
 
 applyTab()
 render()
+// The element opens the camera by itself (autostart).
+status.textContent = t().opening

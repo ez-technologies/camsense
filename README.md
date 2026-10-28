@@ -54,6 +54,7 @@ has **no buttons**: the app draws its own and sets the element from code.
 | `gpu` | `off` to keep to the main processor |
 | `touch` | `none` to ignore touches (default: a touch moves the cross there until the scan ends) |
 | `mirror` | present: the picture is shown mirrored and read as shown, for text seen through glass from behind (the app's button; also the `mirrored` property) |
+| `autostart` | present: the camera opens as soon as the element is on the page (no tap needed; sound and the iPhone's motion sensor wake at the first scan) |
 | `feedback` | how a finished scan is signalled: any of `beep`, `vibrate`, `flash` (e.g. `"vibrate flash"`), or `none`; default `beep vibrate` (no vibration on iPhone) |
 | `progress` | `none` to hide the progress shown over the picture during a focus stack (the `camsense-progress` events still come) |
 
@@ -74,7 +75,7 @@ All of them: `ScanOptions` in `src/core/options.ts`.
 | `options` | any scan option on top of the target preset (see `ScanOptions`) |
 | `models` | the text models (`ModelSet`; latin labels by default); set before `start()` |
 | `include` | `{ images: 'none' \| 'best' \| 'best+crops', metadata: boolean }` |
-| `start()` | open the camera and prepare; call from a tap |
+| `start()` | open the camera and prepare (or use `autostart`) |
 | `scan()` | run the task; single scans resolve with the result |
 | `stop()` | end a continuous scan (its result follows) |
 | `focusStack({ steps, near, far })` | for a page at a slant: frames focused near to far (where the page can move the lens), merged so each part comes from its sharpest frame |

@@ -147,7 +147,7 @@ video { width: 100%; height: 100%; object-fit: cover; display: block; transform-
 `
 
 /** Settings the element reads from attributes. */
-const ATTRS = ['target', 'task', 'continuous', 'assets', 'formats', 'magnification', 'gpu', 'images', 'touch', 'mirror', 'feedback', 'progress'] as const
+const ATTRS = ['target', 'task', 'continuous', 'assets', 'formats', 'magnification', 'gpu', 'images', 'touch', 'mirror', 'feedback', 'progress', 'autostart'] as const
 
 export class CamsenseScanner extends HTMLElement {
   static observedAttributes = [...ATTRS]
@@ -206,6 +206,11 @@ export class CamsenseScanner extends HTMLElement {
     })
     this.applyLayout()
     document.addEventListener('visibilitychange', this.onVisibility)
+    // autostart: the camera opens as soon as the element is on the page (and the page is in front).
+    if (this.hasAttribute('autostart')) {
+      if (document.hidden) this.resume = true
+      else queueMicrotask(() => this.start())
+    }
   }
 
   disconnectedCallback() {
@@ -301,8 +306,9 @@ export class CamsenseScanner extends HTMLElement {
   // ---- lifecycle ----
 
   /**
-   * Opens the camera and prepares what the task needs. Call it from a tap (sound and the iPhone's
-   * motion permission need one). Fires `camsense-ready` or `camsense-error`.
+   * Opens the camera and prepares what the task needs. Fires `camsense-ready` or `camsense-error`.
+   * It may run without a tap (the `autostart` attribute): the sound and the iPhone's motion permission
+   * are then woken by the first scan, which is a tap.
    */
   async start(): Promise<void> {
     const assets = this.getAttribute('assets')
@@ -333,6 +339,7 @@ export class CamsenseScanner extends HTMLElement {
   /** Runs the task. Single: resolves with the result. Continuous: runs until `stop()`, firing events meanwhile. */
   async scan(): Promise<Result | null> {
     if (!this.track || this.running) return null
+    this.wake()
     this.running = true
     this.stopFlag = { stopped: false }
     const startedAt = new Date().toISOString()
@@ -372,6 +379,7 @@ export class CamsenseScanner extends HTMLElement {
    */
   async focusStack(o: { steps?: number; near?: number; far?: number; settleFrames?: number; maxSide?: number } = {}): Promise<FocusStackResult | null> {
     if (!this.track || this.running) return null
+    this.wake()
     this.running = true
     const t0 = performance.now()
     try {
@@ -462,6 +470,12 @@ export class CamsenseScanner extends HTMLElement {
       void this.flashEl.offsetWidth
       this.flashEl.classList.add('on')
     }
+  }
+
+  /** From a tap: sound and (iPhone) motion need one; asked for here at once, before anything is awaited. */
+  private wake() {
+    this.audio?.resume()
+    startMotion()
   }
 
   /** Ends a continuous scan (its result follows), or gives up a single one. */
