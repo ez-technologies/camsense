@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>camsense lab</title>
+    <style>
+      body { margin: 0; padding: 10px; background: #111; color: #eee; font: 15px system-ui, sans-serif; }
+      camsense-scanner { width: 100%; }
+      .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+      button, select { font: inherit; padding: 8px 12px; border-radius: 10px; border: 1px solid #444; background: #2a2a2a; color: #eee; }
+      button.big { width: 100%; padding: 16px; font-size: 20px; background: #1565c0; border: none; }
+      pre { white-space: pre-wrap; font: 13px ui-monospace, monospace; direction: ltr; text-align: left; background: #000; padding: 8px; border-radius: 8px; }
+    </style>
+  </head>
+  <body>
+    <!-- The element only shows the camera; every control below belongs to this page. -->
+    <camsense-scanner id="cam" target="label" task="text"></camsense-scanner>
+    <div class="row">
+      <select id="task"><option value="text">טקסט</option><option value="barcode">ברקוד</option><option value="photo">צילום</option></select>
+      <select id="target"><option>label</option><option>barcode</option><option>product</option><option>document</option><option>far</option></select>
+      <label><input type="checkbox" id="continuous" /> רציף</label>
+      <button id="mirror">כתב מראה</button>
+      <button id="zoom">הגדלה</button>
+      <button id="torch">פנס</button>
+      <button id="precision">החזק לדיוק</button>
+    </div>
+    <button class="big" id="go">הפעל מצלמה</button>
+    <pre id="out"></pre>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -39,6 +39,6 @@ export default defineConfig(({ command }) => ({
   root: __dirname,
   base: command === 'build' ? '/camsense/' : '/',
   plugins: command === 'serve' ? [basicSsl(), samples()] : [],
-  build: { rollupOptions: { input: { main: resolve(__dirname, 'index.html'), document: resolve(__dirname, 'document.html') } } },
+  build: { rollupOptions: { input: { main: resolve(__dirname, 'index.html'), lab: resolve(__dirname, 'lab.html'), document: resolve(__dirname, 'document.html') } } },
   server: { host: '0.0.0.0', port: 5444, strictPort: true },
 }))

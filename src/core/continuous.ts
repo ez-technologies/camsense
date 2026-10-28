@@ -182,20 +182,6 @@ export class LabelTracker {
   }
 }
 
-/** A short beep and vibration (vibration is not available on iPhone). */
-export function signal(audio: AudioContext | null) {
-  navigator.vibrate?.(60)
-  if (!audio) return
-  const osc = audio.createOscillator()
-  const gain = audio.createGain()
-  osc.frequency.value = 1800
-  gain.gain.setValueAtTime(0.25, audio.currentTime)
-  gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.09)
-  osc.connect(gain).connect(audio.destination)
-  osc.start()
-  osc.stop(audio.currentTime + 0.1)
-}
-
 function cropAround(frame: HTMLCanvasElement, reads: TextRead[]): HTMLCanvasElement {
   const m = Math.max(...reads.map((r) => r.box.thickness)) * 0.4
   const x = Math.max(0, Math.min(...reads.map((r) => r.box.x)) - m)

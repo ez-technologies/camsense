@@ -1,7 +1,8 @@
 // camsense: camera recognition for the browser.
 // The <camsense-scanner> element is registered on import. The core is exported for apps that draw
 // their own picture and call the tasks themselves.
-export { CamsenseScanner } from './element/camsense-scanner'
+export { CamsenseScanner, painted } from './element/camsense-scanner'
+export { DEFAULT_FEEDBACK, parseFeedback, PROGRESS_TEXT, type Feedback, type Phase, type ProgressText } from './core/feedback'
 export type { BarcodeResult, FocusStackResult, Label, Line, Metadata, PhotoResult, Result, TextResult, Task, ImagesWanted } from './element/camsense-scanner'
 export { stackFocus, type StackResult, type StackOptions, type FrameFit } from './core/focusstack'
 export { defaults, optionsFor, presets, type ScanOptions, type Target } from './core/options'

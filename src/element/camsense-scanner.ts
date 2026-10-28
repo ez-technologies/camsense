@@ -18,7 +18,8 @@ import {
   type CameraCaps,
   type FocusSweep,
 } from '../core/camera'
-import { runContinuous, signal, words, type Capture } from '../core/continuous'
+import { runContinuous, words, type Capture } from '../core/continuous'
+import { beep, parseFeedback, progressLine, PROGRESS_TEXT, type Phase, type ProgressText } from '../core/feedback'
 import { barcodeReader, readBarcodes, type BarcodeRead } from '../core/barcode'
 import { startMotion, SteadyGate } from '../core/motion'
 import { hasWebGpu, loadEngine, setAssetsBase, type Engine } from '../core/ocr/engine'
@@ -128,10 +129,24 @@ video { width: 100%; height: 100%; object-fit: cover; display: block; transform-
 .boxes { position: absolute; inset: 0; pointer-events: none; }
 .box { position: absolute; border: 2px solid var(--camsense-read-color, #00e676); border-radius: 4px; }
 [hidden] { display: none; }
+.flash { position: absolute; inset: 0; pointer-events: none; background: var(--camsense-flash-color, #fff); opacity: 0; }
+.flash.on { animation: camsense-flash 0.35s ease-out; }
+@keyframes camsense-flash { from { opacity: 0.8; } to { opacity: 0; } }
+.progress { position: absolute; left: 12px; right: 12px; bottom: 12px; pointer-events: none; padding: 10px 12px 12px;
+  border-radius: 10px; background: var(--camsense-progress-bg, rgba(0,0,0,0.65)); color: var(--camsense-progress-color, #fff);
+  font: 600 16px system-ui, sans-serif; text-align: center; }
+.progress .bar { position: relative; height: 6px; margin-top: 8px; border-radius: 3px; overflow: hidden; background: rgba(255,255,255,0.25); }
+.progress .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--camsense-progress-fill, #42a5f5); transition: width 0.2s; }
+:host(:dir(rtl)) .progress .fill { inset: 0 0 0 auto; }
+/* Without a known share the bar runs on its own; the animation runs off the page's main thread, so it
+   keeps moving while the merge and the flattening hold the page. */
+.progress .run { position: absolute; top: 0; bottom: 0; width: 35%; background: var(--camsense-progress-fill, #42a5f5);
+  will-change: transform; animation: camsense-run 1.1s linear infinite; }
+@keyframes camsense-run { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
 `
 
 /** Settings the element reads from attributes. */
-const ATTRS = ['target', 'task', 'continuous', 'assets', 'formats', 'magnification', 'gpu', 'images', 'touch', 'mirror'] as const
+const ATTRS = ['target', 'task', 'continuous', 'assets', 'formats', 'magnification', 'gpu', 'images', 'touch', 'mirror', 'feedback', 'progress'] as const
 
 export class CamsenseScanner extends HTMLElement {
   static observedAttributes = [...ATTRS]
@@ -140,11 +155,15 @@ export class CamsenseScanner extends HTMLElement {
   options: Partial<ScanOptions> = {}
   /** Pictures and metadata to return with each result. */
   include: { images: ImagesWanted; metadata: boolean } = { images: 'none', metadata: false }
+  /** Words of the progress shown over the picture (English by default; set them for another language). */
+  progressText: ProgressText = { ...PROGRESS_TEXT }
 
   private video!: HTMLVideoElement
   private aimEl!: HTMLDivElement
   private crossEl!: HTMLDivElement
   private boxesEl!: HTMLDivElement
+  private flashEl!: HTMLDivElement
+  private progressEl!: HTMLDivElement
   private track: MediaStreamTrack | null = null
   private caps: CameraCaps = {}
   private engine: Engine | null = null
@@ -161,11 +180,15 @@ export class CamsenseScanner extends HTMLElement {
     if (this.shadowRoot) return
     const root = this.attachShadow({ mode: 'open' })
     root.innerHTML = `<style>${STYLE}</style><video playsinline muted></video><div class="aim" part="aim"></div>
-      <div class="cross" part="cross" hidden></div><div class="boxes" part="boxes"></div>`
+      <div class="cross" part="cross" hidden></div><div class="boxes" part="boxes"></div><div class="flash" part="flash"></div>
+      <div class="progress" part="progress" role="status" aria-live="polite" hidden><span></span><div class="bar"><div class="fill"></div><div class="run"></div></div></div>`
     this.video = root.querySelector('video')!
     this.aimEl = root.querySelector('.aim')!
     this.crossEl = root.querySelector('.cross')!
     this.boxesEl = root.querySelector('.boxes')!
+    this.flashEl = root.querySelector('.flash')!
+    this.progressEl = root.querySelector('.progress')!
+    this.flashEl.addEventListener('animationend', () => this.flashEl.classList.remove('on'))
     // A touch on the picture moves the cross there until the scan ends (unless touch="none").
     this.addEventListener('pointerdown', (e) => {
       if (this.getAttribute('touch') === 'none') return
@@ -289,7 +312,7 @@ export class CamsenseScanner extends HTMLElement {
       let result: Result
       if (this.task === 'photo') {
         const shot = await bestShot(this.video, s)
-        signal(this.audio)
+        this.signal()
         result = { task: 'photo', picture: shot.picture, sharpness: shot.sharpness }
       } else if (this.task === 'barcode') {
         result = await this.scanBarcodes(s)
@@ -333,6 +356,7 @@ export class CamsenseScanner extends HTMLElement {
       const nextFrame = () =>
         new Promise<void>((r) => ('requestVideoFrameCallback' in video ? video.requestVideoFrameCallback(() => r()) : setTimeout(r, 33)))
       // Start once the phone is still (at most 2 seconds of waiting).
+      this.progress('steady')
       await startMotion()
       const gate = new SteadyGate(s)
       for (const t = performance.now(); performance.now() - t < 2000; ) {
@@ -342,6 +366,7 @@ export class CamsenseScanner extends HTMLElement {
       const frames: FocusStackResult['frames'] = []
       const canvases: HTMLCanvasElement[] = []
       for (let i = 0; i < steps; i++) {
+        this.progress('capture', i + 1, steps)
         const t1 = performance.now()
         let distance: number | null = null
         if (control) {
@@ -357,9 +382,12 @@ export class CamsenseScanner extends HTMLElement {
         canvases.push(frame)
         frames.push({ picture: new Picture(frame), distance, sharpness: 0, ms: Math.round(performance.now() - t1) })
       }
+      // The phone may move now; the merge holds the page, so the progress is painted first.
+      this.signal()
+      this.progress('merge')
+      await painted()
       const merged = stackFocus(canvases, { maxSide: o.maxSide ?? 1600 })
       merged.share.forEach((_, i) => (frames[i].sharpness = merged.share[i]))
-      signal(this.audio)
       return {
         focusControl: control,
         frames,
@@ -371,7 +399,38 @@ export class CamsenseScanner extends HTMLElement {
       }
     } finally {
       this.running = false
+      this.progress(null)
       if (this.track && canSweepFocus(this.caps)) setFocus(this.track, null)
+    }
+  }
+
+  /**
+   * Shows what the scan is doing over the picture (unless progress="none") and fires `camsense-progress`
+   * ({ phase, done, total }; phase null when it ends). Apps call it for their own steps after a scan,
+   * such as flattening a page; then wait for `painted()` before heavy work so it is seen.
+   */
+  progress(phase: Phase | null, done?: number, total?: number) {
+    this.emit('camsense-progress', { phase, done: done ?? null, total: total ?? null })
+    const el = this.progressEl
+    if (!el) return
+    el.hidden = !phase || this.getAttribute('progress') === 'none'
+    if (!phase) return
+    el.querySelector('span')!.textContent = progressLine(this.progressText, phase, done, total)
+    const known = done !== undefined && !!total
+    const fill = el.querySelector<HTMLDivElement>('.fill')!
+    fill.style.width = known ? `${(100 * done!) / total!}%` : '0'
+    el.querySelector<HTMLDivElement>('.run')!.hidden = known
+  }
+
+  /** The finish signal the app chose (feedback attribute): beep, vibration and/or a flash. */
+  signal() {
+    const f = parseFeedback(this.getAttribute('feedback'))
+    if (f.vibrate) navigator.vibrate?.(60)
+    if (f.beep && this.audio) beep(this.audio)
+    if (f.flash && this.flashEl) {
+      this.flashEl.classList.remove('on')
+      void this.flashEl.offsetWidth
+      this.flashEl.classList.add('on')
     }
   }
 
@@ -399,7 +458,7 @@ export class CamsenseScanner extends HTMLElement {
         s,
         (c, started) => {
           if (started) {
-            signal(this.audio)
+            this.signal()
             labels.push(toLabel(c, labels.length))
           } else {
             labels[labels.length - 1] = toLabel(c, labels.length - 1)
@@ -423,7 +482,7 @@ export class CamsenseScanner extends HTMLElement {
     }
     const r = await runScan(this.video, engine, s, (p) => this.drawBoxes(p), this.stopFlag, focuser, undefined, (st) => this.showSteady(st), this.precision)
     this.lastLog = { frameLog: r.frameLog, focusSearches: r.sweeps }
-    if (r.reads.length) signal(this.audio)
+    if (r.reads.length) this.signal()
     return {
       task: 'text',
       lines: r.reads.map((v) => ({ text: v.text, words: words(v.text), confidence: Math.round(v.confidence * 1000) / 1000, dist: v.d ?? null })),
@@ -450,7 +509,7 @@ export class CamsenseScanner extends HTMLElement {
           if (seen.has(c.value)) continue
           seen.set(c.value, c)
           last = frame
-          signal(this.audio)
+          this.signal()
           if (this.continuous) this.emit('camsense-code', c)
         }
         if (!this.continuous && codes.length) break
@@ -507,6 +566,8 @@ export class CamsenseScanner extends HTMLElement {
       ['', 0, 'default camera, any size'],
     ]
     let lastError: unknown = null
+    // start() again (another target, say) replaces the camera: the old one is let go first.
+    this.track?.stop()
     this.track = null
     for (const [cam, height, note] of ladder) {
       try {
@@ -612,6 +673,11 @@ export class CamsenseScanner extends HTMLElement {
   private fail(e: unknown) {
     this.emit('camsense-error', { message: String(e instanceof Error ? e.message : e) })
   }
+}
+
+/** Resolves once the screen has been painted (two animation frames): call before work that holds the page. */
+export function painted(): Promise<void> {
+  return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
 }
 
 if (!customElements.get('camsense-scanner')) customElements.define('camsense-scanner', CamsenseScanner)

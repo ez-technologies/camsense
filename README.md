@@ -54,6 +54,8 @@ has **no buttons**: the app draws its own and sets the element from code.
 | `gpu` | `off` to keep to the main processor |
 | `touch` | `none` to ignore touches (default: a touch moves the cross there until the scan ends) |
 | `mirror` | present: the picture is shown mirrored and read as shown, for text seen through glass from behind (the app's button; also the `mirrored` property) |
+| `feedback` | how a finished scan is signalled: any of `beep`, `vibrate`, `flash` (e.g. `"vibrate flash"`), or `none`; default `beep vibrate` (no vibration on iPhone) |
+| `progress` | `none` to hide the progress shown over the picture during a focus stack (the `camsense-progress` events still come) |
 
 ### Some options (`cam.options = { ... }`)
 
@@ -78,11 +80,15 @@ All of them: `ScanOptions` in `src/core/options.ts`.
 | `setTorch(on)`, `torchAvailable` | torch (Android) |
 | `precisionHeld` | `true` while the app's precision button is held: only the line under the middle cross |
 | `aimAt({ fx, fy } \| null)` | move the cross (shares of the element's size) |
+| `progress(phase \| null, done?, total?)` | show the app's own step over the picture (e.g. `'flatten'` after `focusStack`); `null` hides it. Await `painted()` before heavy work so it is seen |
+| `progressText` | the words for each phase (`steady`, `capture`, `merge`, `flatten`, `read`; `{done}`/`{total}` filled in); English by default |
+| `signal()` | give the finish signal the app chose (e.g. to let the user try a setting) |
 
 ### Events
 
 `camsense-ready`, `camsense-result`, `camsense-label` (continuous text), `camsense-code` (continuous
-barcodes), `camsense-steady`, `camsense-error`.
+barcodes), `camsense-steady`, `camsense-progress` (`{ phase, done, total }`; phase `null` when done),
+`camsense-error`.
 
 ### Pictures
 
@@ -92,5 +98,8 @@ a file is made only when asked: `toBlob({ purpose | format, maxSide, quality })`
 
 ## Lab
 
-`npm run lab` serves a test page over HTTPS on port 5444 (open it on a phone on the same network and
+Try it on a phone: **https://ez-technologies.github.io/camsense/**: a tab each for a code, a barcode,
+a document and a receipt, and the finish signal to choose. Nothing leaves the phone.
+
+`npm run lab` serves the same pages (the demo, `lab.html` with every setting, `document.html`) over HTTPS on port 5444 (open it on a phone on the same network and
 accept the certificate once). `npm test` runs the unit tests.
