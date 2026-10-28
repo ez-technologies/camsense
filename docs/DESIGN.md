@@ -84,7 +84,13 @@ camera.run({
   ```ts
   const file = await sample.images.best.toBlob({ purpose: 'record' })              // a ready preset
   const file = await sample.images.best.toBlob({ format: 'webp', maxSide: 1024, quality: 0.8 })
+  // Several at once, from the same frame (each made only when asked):
+  const { record, training } = await sample.images.best.toBlobs({ record: { purpose: 'record' }, training: { purpose: 'training' } })
   ```
+
+  The request can also name them up front, so they are ready together:
+  `include: { images: 'best', files: { record: { purpose: 'record' }, training: { purpose: 'training' } } }`.
+  They are still made after the result is returned, one after the other, off the scan's path.
 
   | Format | Size | Where it works | For |
   |---|---|---|---|
