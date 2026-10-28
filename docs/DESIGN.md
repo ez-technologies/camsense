@@ -135,18 +135,26 @@ camera.run({
 | `feedback` | beep, vibration, flash of the box | beep + vibration |
 | `stopWhen` | `first-steady` · `match` (the app's `match` callback says yes) · `timeout` · `manual` | `match` if given, else `first-steady` |
 | `gpu` | `auto` (prepare in the background where WebGPU exists) · `off` | `auto` |
-| UI | full component (viewfinder, buttons) or headless (the app draws its own UI with hooks) | full component |
+| UI | the `<camsense-scanner>` Web Component (viewfinder, buttons), or headless (the app calls the core and draws its own UI) | the component |
 
 **Owner decides:** the defaults, and whether the component's buttons are fixed or arranged by the app.
 
 ## 5. Package layout
 
+**Decided (2026-10-28): a Web Component only, no framework wrappers.** `<camsense-scanner>` is a standard
+browser element, so it works as it is in React, Angular, Vue or plain HTML; results come back as DOM
+events. Each app takes it where it wants; the library does not carry a package per framework.
+
+```html
+<camsense-scanner target="label" task="text" continuous></camsense-scanner>
+```
+
 ```
 camsense/
-  packages/core/     TypeScript, no framework: camera, steadiness, sharpness, focus, OCR engine,
-                     text, barcode, best-shot, continuous labels, telemetry
-  packages/react/    <CameraAssist> viewfinder component and hooks (useCameraTask)
-  apps/lab/          this POC: try every option on a phone, lab server, analysis script
+  src/core/          TypeScript, no framework: camera, steadiness, sharpness, focus, OCR engine,
+                     text, barcode, best-shot, continuous labels, pictures and metadata
+  src/element/       the <camsense-scanner> Web Component (layouts, styling through CSS variables)
+  lab/               the POC's lab: try every option on a phone, lab server, analysis script
   models/            PaddleOCR models + copy script (the app serves them; not inside the package)
 ```
 
