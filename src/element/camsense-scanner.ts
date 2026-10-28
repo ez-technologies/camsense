@@ -22,7 +22,7 @@ import { runContinuous, words, type Capture } from '../core/continuous'
 import { beep, parseFeedback, progressLine, PROGRESS_TEXT, type Phase, type ProgressText } from '../core/feedback'
 import { barcodeReader, readBarcodes, type BarcodeRead } from '../core/barcode'
 import { startMotion, SteadyGate } from '../core/motion'
-import { hasWebGpu, loadEngine, setAssetsBase, type Engine } from '../core/ocr/engine'
+import { hasWebGpu, LATIN_LABELS, loadEngine, setAssetsBase, type Engine, type ModelSet } from '../core/ocr/engine'
 import { optionsFor, type ScanOptions, type Target } from '../core/options'
 import { bestShot } from '../core/photo'
 import { stackFocus, type FrameFit } from '../core/focusstack'
@@ -155,6 +155,8 @@ export class CamsenseScanner extends HTMLElement {
   options: Partial<ScanOptions> = {}
   /** Pictures and metadata to return with each result. */
   include: { images: ImagesWanted; metadata: boolean } = { images: 'none', metadata: false }
+  /** The text models (latin labels by default; a Hebrew set, say). Set before `start()`. */
+  models: ModelSet = LATIN_LABELS
   /** Words of the progress shown over the picture (English by default; set them for another language). */
   progressText: ProgressText = { ...PROGRESS_TEXT }
 
@@ -587,12 +589,13 @@ export class CamsenseScanner extends HTMLElement {
 
   /** The main processor first (quick to load); the graphics processor in the background where it exists. */
   private async prepareEngine() {
-    this.engine = await loadEngine(false)
+    const models = this.models
+    this.engine = await loadEngine(false, models)
     if (!this.settings.gpu) return
     if (!(await hasWebGpu())) return
-    loadEngine(true).then(
+    loadEngine(true, models).then(
       (gpu) => {
-        if (gpu.backend === 'webgpu') this.engine = gpu
+        if (gpu.backend === 'webgpu' && this.models === models) this.engine = gpu
       },
       () => {},
     )

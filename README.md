@@ -72,6 +72,7 @@ All of them: `ScanOptions` in `src/core/options.ts`.
 | | |
 |---|---|
 | `options` | any scan option on top of the target preset (see `ScanOptions`) |
+| `models` | the text models (`ModelSet`; latin labels by default); set before `start()` |
 | `include` | `{ images: 'none' \| 'best' \| 'best+crops', metadata: boolean }` |
 | `start()` | open the camera and prepare; call from a tap |
 | `scan()` | run the task; single scans resolve with the result |

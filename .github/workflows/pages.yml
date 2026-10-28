@@ -27,6 +27,13 @@ jobs:
       - run: npm test
       # The page-flattening model (UVDoc, 32 MB) for the document and receipt tabs; not kept in the repo.
       - run: mkdir -p lab/public/research && curl -sfL -o lab/public/research/uvdoc.onnx https://huggingface.co/PaddlePaddle/UVDoc_onnx/resolve/main/inference.onnx
+      # Hebrew reading for the code tab (Rivok/paddleocr-hebrew: word detection and the mobile reader, 13 MB).
+      - run: |
+          H=https://huggingface.co/Rivok/paddleocr-hebrew/resolve/main
+          for f in charset_v2f.txt word-det/det.onnx mobile-word/rec.onnx; do
+            mkdir -p "lab/public/research/$(dirname "$f")"
+            curl -sfL -o "lab/public/research/$f" "$H/$f"
+          done
       - run: npm run lab:build
       - uses: actions/upload-pages-artifact@v3
         with:

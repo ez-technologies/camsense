@@ -22,6 +22,11 @@
       #result img { width: 100%; border-radius: 8px; display: block; }
       #result ul { padding-inline-start: 20px; }
       #result li { margin: 4px 0; font-size: 17px; }
+      #result small { color: #999; font-size: 13px; }
+      #result h3 { font-size: 14px; color: #aaa; margin: 14px 0 6px; }
+      #result h4 { margin: 10px 0 4px; }
+      .entry { border-top: 1px solid #333; }
+      button[aria-pressed='true'] { background: #1565c0; border-color: #1565c0; }
       .hint { color: #999; font-size: 13px; }
       a { color: #64b5f6; }
     </style>
@@ -44,11 +49,17 @@
       <label><input type="checkbox" id="fb-beep" /> <span data-t="beep"></span></label>
       <label><input type="checkbox" id="fb-vibrate" /> <span data-t="vibrate"></span></label>
       <label><input type="checkbox" id="fb-flash" /> <span data-t="flash"></span></label>
+    </div>
+    <div class="row">
+      <button id="mirror" data-t="mirror" aria-pressed="false"></button>
       <button id="torch" data-t="torch"></button>
+      <span id="readRow"><span data-t="readLang"></span>
+        <select id="readLang"><option value="latin" data-t="latin"></option><option value="he" data-t="hebrew"></option></select></span>
     </div>
     <button class="big" id="go"></button>
     <p id="status" role="status"></p>
     <div id="result"></div>
+    <button id="clear" data-t="clear"></button>
     <p class="hint"><a href="lab.html" data-t="labLink"></a> · <a href="https://github.com/ez-technologies/camsense">GitHub</a></p>
     <script type="module" src="./play.ts"></script>
   </body>
