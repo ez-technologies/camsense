@@ -65,7 +65,8 @@ go.addEventListener('click', async () => {
     const t0 = performance.now()
     flat = await unwarpPage(toCanvas())
     flattenMs = Math.round(performance.now() - t0)
-    result.append(title(`מיושר (${flattenMs} ms)`), figure(flat.toDataURL('image/jpeg', 0.85), ''))
+    // The flattened page is the result: shown first, above the merged picture and the frames.
+    result.prepend(title(`הדף המיושר (${flattenMs} ms)`), figure(flat.toDataURL('image/jpeg', 0.9), ''))
   }
   status.textContent = `שליטה בפוקוס: ${stack.focusControl ? 'כן' : 'לא'} · צילום ומיזוג ${stack.ms} ms · יישור ${flattenMs} ms · ${stack.stacked.width}x${stack.stacked.height}`
 
