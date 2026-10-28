@@ -56,8 +56,31 @@ Each value of a preset can be overridden (`{ target: 'label', distance: [5, 15],
   No models are downloaded for this task.
 - Later: `document` (straighten the page), `count` (how many items)…
 
-Every task can also return **telemetry** (frame timings, sharpness, motion, camera, settings) to a sink
-the app provides, for samples from production.
+### What comes back besides the result
+
+Every task can return, beside the data it read, the **pictures** and the **metadata** of the scan, so an
+app can keep samples, study failures or train a model later. The app chooses per call:
+
+```ts
+camera.run({
+  task: 'text',
+  include: {
+    images: 'none' | 'best' | 'best+crops' | 'every-read-frame',  // JPEG/WebP blobs, chosen size
+    metadata: true,      // see below
+  },
+  onSample: (sample) => upload(sample),  // optional: called after each result, for production samples
+})
+```
+
+- **Pictures:** none (text only, the default), the frame the result came from, plus a crop of each line or
+  label, or every frame that was read.
+- **Metadata:** time and duration; device and browser; camera (which one, resolution, closest focus,
+  torch); settings used (preset, magnification, aiming box, thresholds, GPU or not); the aim point and
+  each line's box and distance from it; per frame: sharpness, motion, timings of each step, what was read
+  and with what confidence; focus searches. This is what the POC's lab saved and what made every fix
+  possible.
+- Nothing is sent anywhere by the library itself: it hands the sample to the app, and the app decides
+  where it goes (MICMS: its production sample store, switched on per unit).
 
 **Owner decides:** which tasks are in the first version (proposal: `text`, `photo`, `barcode`).
 
