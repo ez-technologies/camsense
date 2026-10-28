@@ -11,6 +11,7 @@ let BASE = '/camsense/'
 export function setAssetsBase(url: string) {
   BASE = url.endsWith('/') ? url : `${url}/`
 }
+export const assetsBase = () => BASE
 
 /**
  * A text region: a rectangle turned by `angle` (radians, clockwise in screen coordinates) around

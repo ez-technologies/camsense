@@ -123,6 +123,17 @@ describe('LabelTracker while the phone moves along one label', () => {
   })
 })
 
+describe('LabelTracker when the rest of a label comes into view at once', () => {
+  it('one line first, then it and three more: still one label', () => {
+    const t = new LabelTracker(2)
+    const feed = (lines: string[]) => t.feed(lines.map((text) => ({ text, confidence: 0.99 })), 0.97)
+    expect(feed(['WQU']).started).toBe(true)
+    const u = feed(['WQU', 'Nishnianidze St.', 'Gizo', '0105'])
+    expect(u.started).toBe(false)
+    expect(u.added).toHaveLength(3)
+  })
+})
+
 describe('words', () => {
   it('splits a line into its words', () => {
     expect(words('Tracking No.  2405N22.5')).toEqual(['Tracking', 'No.', '2405N22.5'])
