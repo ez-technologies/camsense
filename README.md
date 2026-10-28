@@ -54,6 +54,17 @@ has **no buttons**: the app draws its own and sets the element from code.
 | `gpu` | `off` to keep to the main processor |
 | `touch` | `none` to ignore touches (default: a touch moves the cross there until the scan ends) |
 
+### Some options (`cam.options = { ... }`)
+
+| Option | Values |
+|---|---|
+| `mirror` | `'off'` (default) · `'on'`: text seen through glass from behind (a mirror image), every line read mirrored · `'auto'`: lines read with doubt are also tried mirrored (slower on those lines). With `'on'`, normal text is not read. |
+| `waitSteady`, `gyroThreshold`, `diffThreshold`, `steadyMs` | read only when the phone is steady |
+| `fastConfidence`, `minLineConfidence` | continuous text: take a line from one frame; ignore logos |
+| `cameraHeight`, `viewZoom`, `aimBox`, `distance` | camera picture, magnification, aiming box, scanning distance |
+
+All of them: `ScanOptions` in `src/core/options.ts`.
+
 ### Properties and methods
 
 | | |

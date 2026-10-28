@@ -39,6 +39,11 @@ export interface ScanOptions {
   gpu: boolean
   /** The picture's magnification (1-4): only the middle is shown and read. */
   viewZoom: number
+  /**
+   * Text seen through glass from behind is a mirror image. 'off' (default); 'on': read every line
+   * mirrored; 'auto': lines read with doubt are tried mirrored too (costs time on those lines only).
+   */
+  mirror: 'off' | 'on' | 'auto'
   /** Read only once the phone has been steady for `steadyMs`. */
   waitSteady: boolean
   gyroThreshold: number
@@ -66,6 +71,7 @@ export const defaults: ScanOptions = {
   minLineConfidence: 0.75,
   gpu: true,
   viewZoom: 2,
+  mirror: 'off',
   waitSteady: true,
   gyroThreshold: 25,
   diffThreshold: 12,

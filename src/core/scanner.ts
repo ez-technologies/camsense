@@ -286,6 +286,7 @@ export async function runScan(
       detLimit: s.detLimit,
       minConfidence: s.minConfidence,
       maxBoxes: 12,
+      mirror: s.mirror,
       // Results come from the middle of the box outwards; while precision is held, only the line at
       // its point is read.
       focus: at.focus,
