@@ -7,6 +7,8 @@ const go = document.getElementById('go') as HTMLButtonElement
 const log = (s: string) => (out.textContent = `${s}\n${out.textContent}`.slice(0, 4000))
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 
+// The models and runtime files sit under the page's own address (copied there by camsense-copy-assets).
+cam.setAttribute('assets', `${import.meta.env.BASE_URL}camsense/`)
 cam.include = { images: 'best', metadata: true }
 let started = false
 let torch = false
