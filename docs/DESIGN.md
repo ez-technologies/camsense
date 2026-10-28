@@ -65,7 +65,7 @@ app can keep samples, study failures or train a model later. The app chooses per
 camera.run({
   task: 'text',
   include: {
-    images: 'none' | 'best' | 'best+crops' | 'every-read-frame',  // JPEG/WebP blobs, chosen size
+    images: 'none' | 'best' | 'best+crops' | 'every-read-frame',  // default 'none'
     metadata: true,      // see below
   },
   onSample: (sample) => upload(sample),  // optional: called after each result, for production samples
@@ -79,6 +79,12 @@ camera.run({
   each line's box and distance from it; per frame: sharpness, motion, timings of each step, what was read
   and with what confidence; focus searches. This is what the POC's lab saved and what made every fix
   possible.
+- **Pictures never delay the result.** The frames are already in memory; the result comes back at once
+  with references to them. Turning a picture into a file (JPEG/WebP, roughly 20–80 ms per picture on a
+  phone) happens only when the app asks (`image.toBlob()`), after the user has had the beep. The library
+  keeps nothing once it has returned; pictures the app does not hold are freed by the browser.
+  `every-read-frame` keeps a few MB per frame until the scan ends, so in continuous scanning it keeps only
+  the frames a result came from.
 - Nothing is sent anywhere by the library itself: it hands the sample to the app, and the app decides
   where it goes (MICMS: its production sample store, switched on per unit).
 
