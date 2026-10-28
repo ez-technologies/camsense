@@ -77,30 +77,6 @@ export function backgroundMask(g: Uint8Array, w: number, h: number, level: numbe
   return bg
 }
 
-/** Median then mean smoothing of an edge line; missing values (-1) are filled from their neighbours. */
-export function smoothEdge(v: number[], fallback: number, radius: number): number[] {
-  const n = v.length
-  const known = v.map((x, i) => [i, x] as const).filter(([, x]) => x >= 0)
-  if (!known.length) return v.map(() => fallback)
-  const filled = v.map((x, i) => {
-    if (x >= 0) return x
-    let best = known[0]
-    for (const k of known) if (Math.abs(k[0] - i) < Math.abs(best[0] - i)) best = k
-    return best[1]
-  })
-  const med = filled.map((_, i) => {
-    const w = filled.slice(Math.max(0, i - radius), Math.min(n, i + radius + 1)).sort((a, b) => a - b)
-    return w[w.length >> 1]
-  })
-  const r2 = Math.max(1, radius >> 1)
-  return med.map((_, i) => {
-    let s = 0
-    let c = 0
-    for (let j = Math.max(0, i - r2); j < Math.min(n, i + r2 + 1); j++) { s += med[j]; c++ }
-    return s / c
-  })
-}
-
 /** For each output position, where to read: the line between edge a and edge b stretched over the side. */
 function stretchLine(src: Uint8ClampedArray, dst: Uint8ClampedArray, w: number, h: number,
   a: number[], b: number[], rows: boolean) {
@@ -122,19 +98,109 @@ function stretchLine(src: Uint8ClampedArray, dst: Uint8ClampedArray, w: number, 
   }
 }
 
+/** Most colour a pixel may have and still count as paper (max-min over max of its channels). */
+const PAPER_COLOUR = 0.16
+
+/** Paper-likeness of each pixel: its brightness, or 0 when it is coloured (a rug, skin, a table). */
+export function paperness(data: Uint8ClampedArray, n: number): { g: Uint8Array; level: number } {
+  const gray = new Uint8Array(n)
+  const g = new Uint8Array(n)
+  for (let i = 0; i < n; i++) {
+    const r = data[i * 4]
+    const gr = data[i * 4 + 1]
+    const b = data[i * 4 + 2]
+    gray[i] = (r * 77 + gr * 150 + b * 29) >> 8
+    const hi = Math.max(r, gr, b)
+    const colour = hi ? (hi - Math.min(r, gr, b)) / hi : 0
+    g[i] = colour > PAPER_COLOUR ? 0 : gray[i]
+  }
+  return { g, level: paperLevel(gray) }
+}
+
+/** Least-squares quadratic through (i, v[i]) for the indices in `use`; returns the coefficients a + b*t + c*t^2, t = i/n. */
+function fitQuadratic(v: number[], use: number[]): [number, number, number] | null {
+  if (use.length < 3) return null
+  const n = v.length
+  const m = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+  const r = [0, 0, 0]
+  for (const i of use) {
+    const t = i / n
+    const p = [1, t, t * t]
+    for (let a = 0; a < 3; a++) {
+      r[a] += p[a] * v[i]
+      for (let b = 0; b < 3; b++) m[a][b] += p[a] * p[b]
+    }
+  }
+  // Gaussian elimination on the 3x3 normal equations.
+  for (let c = 0; c < 3; c++) {
+    let piv = c
+    for (let k = c + 1; k < 3; k++) if (Math.abs(m[k][c]) > Math.abs(m[piv][c])) piv = k
+    if (Math.abs(m[piv][c]) < 1e-9) return null
+    ;[m[c], m[piv]] = [m[piv], m[c]]
+    ;[r[c], r[piv]] = [r[piv], r[c]]
+    for (let k = 0; k < 3; k++) {
+      if (k === c) continue
+      const f = m[k][c] / m[c][c]
+      for (let b = c; b < 3; b++) m[k][b] -= f * m[c][b]
+      r[k] -= f * r[c]
+    }
+  }
+  return [r[0] / m[0][0], r[1] / m[1][1], r[2] / m[2][2]]
+}
+
+/**
+ * A page's edge is a smooth curve. Fit one (a quadratic, refitted without the points far from it) to
+ * the measured edge; when too few points agree, the side is left where it is (`fallback`).
+ * `tolerance` is how far, in pixels, a measured point may be from the curve and still agree.
+ */
+export function fitEdge(v: number[], fallback: number, tolerance: number): number[] {
+  const n = v.length
+  let use = v.map((x, i) => (x >= 0 ? i : -1)).filter((i) => i >= 0)
+  let k: [number, number, number] | null = null
+  for (let round = 0; round < 4; round++) {
+    k = fitQuadratic(v, use)
+    if (!k) break
+    const kk = k
+    const at = (i: number) => kk[0] + kk[1] * (i / n) + kk[2] * (i / n) ** 2
+    const next = use.filter((i) => Math.abs(v[i] - at(i)) <= tolerance * (round < 3 ? 3 - round : 1))
+    if (next.length === use.length && round > 0) break
+    use = next
+  }
+  if (!k || use.length < n * 0.5) return v.map(() => fallback)
+  const kk = k
+  return v.map((_, i) => kk[0] + kk[1] * (i / n) + kk[2] * (i / n) ** 2)
+}
+
+/** Value of an edge line (measured on the small copy) at a full-size position. */
+function edgeAt(e: number[], pos: number, scale: number): number {
+  const p = Math.min(e.length - 1, Math.max(0, pos * scale))
+  const i = Math.floor(p)
+  const j = Math.min(e.length - 1, i + 1)
+  return (e[i] * (1 - (p - i)) + e[j] * (p - i)) / scale
+}
+
+/** Side of the small copy the page's edges are found on; the stretch itself is done at full size. */
+const DETECT_SIDE = 400
+
 /**
  * Stretch the page so its edges meet the picture's edges. `maxPull` limits how far, as a share of the
  * side, an edge may be pulled in before it is taken as background, not a bent edge.
  */
-export function stretchToEdges(src: HTMLCanvasElement, maxPull = 0.15): HTMLCanvasElement {
+export function stretchToEdges(src: HTMLCanvasElement, maxPull = 0.18): HTMLCanvasElement {
   const w = src.width
   const h = src.height
-  const data = src.getContext('2d')!.getImageData(0, 0, w, h).data
-  const g = new Uint8Array(w * h)
-  for (let i = 0; i < w * h; i++) g[i] = (data[i * 4] * 77 + data[i * 4 + 1] * 150 + data[i * 4 + 2] * 29) >> 8
-  const bg = backgroundMask(g, w, h, paperLevel(g), Math.max(4, Math.round(Math.max(w, h) * 0.012)))
-  const capX = Math.round(w * maxPull)
-  const capY = Math.round(h * maxPull)
+  const scale = Math.min(1, DETECT_SIDE / Math.max(w, h))
+  const sw = Math.max(8, Math.round(w * scale))
+  const sh = Math.max(8, Math.round(h * scale))
+  const small = document.createElement('canvas')
+  small.width = sw
+  small.height = sh
+  const sx = small.getContext('2d', { willReadFrequently: true })!
+  sx.drawImage(src, 0, 0, sw, sh)
+  const { g, level } = paperness(sx.getImageData(0, 0, sw, sh).data, sw * sh)
+  const bg = backgroundMask(g, sw, sh, level, Math.max(2, Math.round(Math.max(sw, sh) * 0.012)))
+  const capX = Math.round(sw * maxPull)
+  const capY = Math.round(sh * maxPull)
   // An edge is the first paper pixel from the side; a side that is background further than the cap is
   // not a bent edge (the picture missed the page there) and is filled from its neighbours.
   const scan = (n: number, cap: number, at: (k: number) => number, fromEnd: boolean) => {
@@ -143,23 +209,31 @@ export function stretchToEdges(src: HTMLCanvasElement, maxPull = 0.15): HTMLCanv
   }
   const left: number[] = []
   const right: number[] = []
-  for (let y = 0; y < h; y++) {
-    left.push(scan(w, capX, (x) => y * w + x, false))
-    right.push(scan(w, capX, (x) => y * w + x, true))
+  for (let y = 0; y < sh; y++) {
+    left.push(scan(sw, capX, (x) => y * sw + x, false))
+    right.push(scan(sw, capX, (x) => y * sw + x, true))
   }
   const top: number[] = []
   const bottom: number[] = []
-  for (let x = 0; x < w; x++) {
-    top.push(scan(h, capY, (y) => y * w + x, false))
-    bottom.push(scan(h, capY, (y) => y * w + x, true))
+  for (let x = 0; x < sw; x++) {
+    top.push(scan(sh, capY, (y) => y * sw + x, false))
+    bottom.push(scan(sh, capY, (y) => y * sw + x, true))
   }
-  const rx = Math.max(3, Math.round(h * 0.04))
-  const ry = Math.max(3, Math.round(w * 0.04))
-  const L = smoothEdge(left, 0, rx)
-  const R = smoothEdge(right, w - 1, rx)
-  const T = smoothEdge(top, 0, ry)
-  const B = smoothEdge(bottom, h - 1, ry)
+  // Edge pixels are inclusive; the stretch maps the paper from its first to its last pixel.
+  const tol = Math.max(2, Math.max(sw, sh) * 0.01)
+  const clamp = (e: number[], lo: number, hi: number) => e.map((v) => Math.min(hi, Math.max(lo, v)))
+  const Ls = clamp(fitEdge(left, 0, tol), 0, capX)
+  const Rs = clamp(fitEdge(right, sw - 1, tol), sw - 1 - capX, sw - 1).map((v) => v + 1)
+  const Ts = clamp(fitEdge(top, 0, tol), 0, capY)
+  const Bs = clamp(fitEdge(bottom, sh - 1, tol), sh - 1 - capY, sh - 1).map((v) => v + 1)
+  const full = (e: number[], n: number, end: boolean) =>
+    Array.from({ length: n }, (_, i) => edgeAt(e, i, scale) - (end ? 1 : 0))
+  const L = full(Ls, h, false)
+  const R = full(Rs, h, true)
+  const T = full(Ts, w, false)
+  const B = full(Bs, w, true)
 
+  const data = src.getContext('2d')!.getImageData(0, 0, w, h).data
   const mid = new Uint8ClampedArray(w * h * 4)
   stretchLine(data, mid, w, h, L, R, true)
   const out = new Uint8ClampedArray(w * h * 4)

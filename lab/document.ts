@@ -52,6 +52,7 @@ go.addEventListener('click', async () => {
   result.append(title(`${stack.frames.length} פריימים`), frames, title('מחובר'), figure(stack.stacked.toDataURL({ purpose: 'record' }), ''))
   let flat: HTMLCanvasElement | null = null
   let flattenMs = 0
+  let stretchMs = 0
   if ($<HTMLInputElement>('flatten').checked) {
     status.textContent = 'מיישר… (בפעם הראשונה יורד מודל של 32MB)'
     const toCanvas = () => {
@@ -64,12 +65,15 @@ go.addEventListener('click', async () => {
     await loadUnwarp('/research/uvdoc.onnx')
     const t0 = performance.now()
     // Flattened, then trimmed to the page alone.
-    flat = cropToPage(stretchToEdges(await unwarpPage(toCanvas())))
+    const unwarped = await unwarpPage(toCanvas())
+    const t1 = performance.now()
+    flat = cropToPage(stretchToEdges(unwarped))
+    stretchMs = Math.round(performance.now() - t1)
     flattenMs = Math.round(performance.now() - t0)
     // The flattened page is the result: shown first, above the merged picture and the frames.
     result.prepend(title(`הדף המיושר (${flattenMs} ms)`), figure(flat.toDataURL('image/jpeg', 0.9), ''))
   }
-  status.textContent = `שליטה בפוקוס: ${stack.focusControl ? 'כן' : 'לא'} · צילום ומיזוג ${stack.ms} ms · יישור ${flattenMs} ms · ${stack.stacked.width}x${stack.stacked.height}`
+  status.textContent = `שליטה בפוקוס: ${stack.focusControl ? 'כן' : 'לא'} · צילום ומיזוג ${stack.ms} ms · יישור ${flattenMs} ms (מתוכו מתיחה לקצוות ${stretchMs}) · ${stack.stacked.width}x${stack.stacked.height}`
 
   const send = Object.assign(document.createElement('button'), { className: 'big send', textContent: 'שלח למחשב' })
   send.addEventListener('click', async () => {
@@ -87,6 +91,7 @@ go.addEventListener('click', async () => {
       focusControl: stack.focusControl,
       frames: stack.frames.map((f, i) => ({ distance: f.distance, ms: f.ms, fit: stack.fits[i] })),
       flattenMs,
+      stretchMs,
       share: stack.share,
       ms: stack.ms,
       size: [stack.stacked.width, stack.stacked.height],

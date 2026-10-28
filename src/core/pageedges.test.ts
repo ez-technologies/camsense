@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { backgroundMask, smoothEdge } from './pageedges'
+import { backgroundMask, fitEdge } from './pageedges'
 
 describe('backgroundMask', () => {
   // A 60x40 picture: dark background, paper from x=10, with a thin printed line and a printed band.
@@ -23,13 +23,21 @@ describe('backgroundMask', () => {
   })
 })
 
-describe('smoothEdge', () => {
-  it('fills missing values from the nearest known ones and ignores a single spike', () => {
-    const v = [10, 10, -1, 10, 90, 10, 10, 10, -1, -1]
-    const s = smoothEdge(v, 0, 2)
-    for (const x of s) expect(x).toBeCloseTo(10, 0)
+describe('fitEdge', () => {
+  it('follows a bent edge and ignores points that stray from it', () => {
+    const v = Array.from({ length: 100 }, (_, i) => 20 + 30 * ((i - 50) / 50) ** 2)
+    v[10] = 90 // print taken for background
+    v[60] = -1 // nothing found
+    const f = fitEdge(v, 0, 2)
+    expect(f[10]).toBeCloseTo(20 + 30 * 0.64, 0)
+    expect(f[50]).toBeCloseTo(20, 0)
+    expect(f[60]).toBeCloseTo(21.2, 0)
   })
-  it('uses the fallback when nothing is known', () => {
-    expect(smoothEdge([-1, -1, -1], 7, 1)).toEqual([7, 7, 7])
+  it('leaves the side alone when the points do not agree on a curve', () => {
+    const v = Array.from({ length: 100 }, (_, i) => (i % 2 ? 5 : 60) + (i % 7) * 9)
+    expect(fitEdge(v, 0, 2).every((x) => x === 0)).toBe(true)
+  })
+  it('leaves the side alone when nothing was found', () => {
+    expect(fitEdge([-1, -1, -1, -1], 7, 2)).toEqual([7, 7, 7, 7])
   })
 })
