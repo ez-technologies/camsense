@@ -189,9 +189,8 @@ export class CamsenseScanner extends HTMLElement {
     const mag = this.getAttribute('magnification')
     if (mag) s.viewZoom = Number(mag)
     if (this.getAttribute('gpu') === 'off') s.gpu = false
-    // mirror="on" | "auto": the text may be a mirror image (seen through glass from behind).
-    const mirror = this.getAttribute('mirror')
-    if (mirror === 'on' || mirror === 'auto' || mirror === 'off') s.mirror = mirror
+    // mirror (present): the picture is shown and read mirrored, for text seen through glass from behind.
+    if (this.hasAttribute('mirror')) s.mirror = true
     return s
   }
 
@@ -201,6 +200,14 @@ export class CamsenseScanner extends HTMLElement {
   }
   get magnification() {
     return this.settings.viewZoom
+  }
+
+  /** Show and read the picture mirrored (the app's button for text seen through glass). */
+  set mirrored(on: boolean) {
+    this.toggleAttribute('mirror', on)
+  }
+  get mirrored() {
+    return this.settings.mirror
   }
 
   /** Torch on or off (Android only). Resolves to whether it worked. */
@@ -470,7 +477,7 @@ export class CamsenseScanner extends HTMLElement {
     this.aimEl.hidden = !s.aimBox
     this.aimEl.style.width = `${AIM_W * 100}%`
     this.aimEl.style.height = `${AIM_H * 100}%`
-    if (this.video) this.video.style.transform = `scale(${s.viewZoom})`
+    if (this.video) this.video.style.transform = `scale(${s.viewZoom})${s.mirror ? ' scaleX(-1)' : ''}`
   }
 
   private setPoint(p: { fx: number; fy: number } | null, only: boolean) {

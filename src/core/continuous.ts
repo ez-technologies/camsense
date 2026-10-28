@@ -302,7 +302,6 @@ export async function runContinuous(
       detLimit: s.detLimit,
       minConfidence: s.minConfidence,
       maxBoxes: 12,
-      mirror: s.mirror,
       focus,
       onlyAtFocus: at.only,
     })

@@ -53,13 +53,12 @@ has **no buttons**: the app draws its own and sets the element from code.
 | `magnification` | 1–4 |
 | `gpu` | `off` to keep to the main processor |
 | `touch` | `none` to ignore touches (default: a touch moves the cross there until the scan ends) |
-| `mirror` | `on`: the text is a mirror image (scanning through glass from behind) · `auto`: it may be, try doubtful lines mirrored too · `off` (default) |
+| `mirror` | present: the picture is shown mirrored and read as shown, for text seen through glass from behind (the app's button; also the `mirrored` property) |
 
 ### Some options (`cam.options = { ... }`)
 
 | Option | Values |
 |---|---|
-| `mirror` | `'off'` (default) · `'on'`: text seen through glass from behind (a mirror image), every line read mirrored · `'auto'`: lines read with doubt are also tried mirrored (slower on those lines). With `'on'`, normal text is not read. |
 | `waitSteady`, `gyroThreshold`, `diffThreshold`, `steadyMs` | read only when the phone is steady |
 | `fastConfidence`, `minLineConfidence` | continuous text: take a line from one frame; ignore logos |
 | `cameraHeight`, `viewZoom`, `aimBox`, `distance` | camera picture, magnification, aiming box, scanning distance |

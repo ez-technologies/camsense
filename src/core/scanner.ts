@@ -6,12 +6,13 @@ import type { FocusSweep } from './camera'
 import { SteadyGate } from './motion'
 import type { Settings } from './options'
 
-/** A rectangle in video pixels. */
+/** A rectangle in video pixels (as shown: when `mirror`, measured on the mirrored view). */
 export interface Region {
   x: number
   y: number
   w: number
   h: number
+  mirror?: boolean
 }
 
 /** Share of the visible picture's width and height the aiming box covers. */
@@ -172,15 +173,25 @@ export function grab(video: HTMLVideoElement, r: Region, maxSide = MAX_SIDE): HT
   const c = document.createElement('canvas')
   c.width = Math.round(r.w * scale)
   c.height = Math.round(r.h * scale)
-  c.getContext('2d', { willReadFrequently: true })!.drawImage(video, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height)
+  const ctx = c.getContext('2d', { willReadFrequently: true })!
+  if (r.mirror) {
+    // The view is mirrored around its middle: take the matching part of the video and flip it, so
+    // the frame is exactly what the user sees.
+    ctx.translate(c.width, 0)
+    ctx.scale(-1, 1)
+    ctx.drawImage(video, video.videoWidth - r.x - r.w, r.y, r.w, r.h, 0, 0, c.width, c.height)
+  } else {
+    ctx.drawImage(video, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height)
+  }
   return c
 }
 
 /** What is read: the aiming box, or with the box off everything visible on screen. */
 export function frameRegion(video: HTMLVideoElement, s: Settings): Region {
-  if (!video.clientWidth) return { x: 0, y: 0, w: video.videoWidth, h: video.videoHeight }
+  if (!video.clientWidth) return { x: 0, y: 0, w: video.videoWidth, h: video.videoHeight, mirror: s.mirror }
   const [fw, fh] = s.aimBox ? [AIM_W, AIM_H] : [1, 1]
-  return aimRegion(video.videoWidth, video.videoHeight, video.clientWidth, video.clientHeight, fw, fh, s.viewZoom)
+  const r = aimRegion(video.videoWidth, video.videoHeight, video.clientWidth, video.clientHeight, fw, fh, s.viewZoom)
+  return { ...r, mirror: s.mirror }
 }
 
 /** Sharpness of the aiming box for focusing: grabbed small (640 pixels), which is quick. */
@@ -286,7 +297,6 @@ export async function runScan(
       detLimit: s.detLimit,
       minConfidence: s.minConfidence,
       maxBoxes: 12,
-      mirror: s.mirror,
       // Results come from the middle of the box outwards; while precision is held, only the line at
       // its point is read.
       focus: at.focus,

@@ -50,8 +50,6 @@ export interface TextRead {
   rotation: number
   /** Pixels from the focus point (the middle, or a touched point) to the line's box; 0 when on it. */
   dist?: number
-  /** Read as a mirror image (text seen through glass from behind). */
-  mirrored?: boolean
 }
 
 export interface OcrOptions {
@@ -69,8 +67,6 @@ export interface OcrOptions {
   focus?: { x: number; y: number }
   /** Precision: read only the box under the point, or touching it within one line's height. */
   onlyAtFocus?: boolean
-  /** Mirror images (through glass): 'off'; 'on': every line is mirrored; 'auto': doubtful lines are tried mirrored too. */
-  mirror?: 'off' | 'on' | 'auto'
 }
 
 /**
@@ -212,28 +208,17 @@ export class Engine {
     for (const [i, box] of boxes.entries()) {
       const dir = upsideDown[i]
       const first = dir === null ? false : dir.flipped
-      const mirrorFirst = options.mirror === 'on'
-      let best = { ...(await this.recognize(canvas, box, first, mirrorFirst)), flipped: first, mirrored: mirrorFirst }
+      let best = { ...(await this.recognize(canvas, box, first)), flipped: first }
       recs++
-      // The direction model does not know mirrored text: with mirror 'on', its answer is not trusted.
-      if (best.confidence < 0.9 && (dir === null || dir.sure < 0.9 || mirrorFirst)) {
+      if (best.confidence < 0.9 && (dir === null || dir.sure < 0.9)) {
         recs++
-        const r = await this.recognize(canvas, box, !first, mirrorFirst)
-        if (r.confidence > best.confidence) best = { ...r, flipped: !first, mirrored: mirrorFirst }
-      }
-      // Mirror 'auto': a doubtful line may be seen through glass; read it as a mirror image too, both
-      // ways up (the direction model does not know mirrored text).
-      if (options.mirror === 'auto' && best.confidence < 0.85) {
-        for (const flipped of [false, true]) {
-          recs++
-          const r = await this.recognize(canvas, box, flipped, true)
-          if (r.confidence > best.confidence) best = { ...r, flipped, mirrored: true }
-        }
+        const r = await this.recognize(canvas, box, !first)
+        if (r.confidence > best.confidence) best = { ...r, flipped: !first }
       }
       const rotation = Math.round((box.angle * 180) / Math.PI + (best.flipped ? 180 : 0))
       if (best.text && best.confidence >= options.minConfidence) {
         const dist = focus ? Math.round(distanceToBox(focus, box)) : undefined
-        reads.push({ text: cleanDigits(best.text), confidence: best.confidence, box, rotation, dist, mirrored: best.mirrored || undefined })
+        reads.push({ text: cleanDigits(best.text), confidence: best.confidence, box, rotation, dist })
       }
     }
     this.last = { detMs: Math.round(t1 - t0), recMs: Math.round(performance.now() - t1), boxes: boxes.length, recs }
@@ -284,13 +269,13 @@ export class Engine {
     return boxes.map((_, n) => ({ flipped: p[n * 2 + 1] > p[n * 2], sure: Math.max(p[n * 2], p[n * 2 + 1]) }))
   }
 
-  private async recognize(canvas: HTMLCanvasElement, box: Box, flipped: boolean, mirrored = false) {
+  private async recognize(canvas: HTMLCanvasElement, box: Box, flipped: boolean) {
     const H = 48
     const w = Math.min(640, Math.max(16, Math.ceil((H * box.length) / box.thickness)))
     // The graphics processor builds programs per input size: widths are rounded up to steps of 64
     // (the rest left blank, as PaddleOCR pads), so a few sizes cover every line.
     const W = this.backend === 'webgpu' ? Math.min(640, Math.ceil(w / 64) * 64) : w
-    const px = drawStraightened(canvas, box, w, H, flipped, mirrored)
+    const px = drawStraightened(canvas, box, w, H, flipped)
     const input = new Float32Array(3 * W * H)
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < w; x++) {
@@ -349,12 +334,10 @@ function drawScaled(src: HTMLCanvasElement, sx: number, sy: number, sw: number, 
 }
 
 /** Cuts the box out as a level w x h image (text running left to right), or upside down. */
-function drawStraightened(src: HTMLCanvasElement, box: Box, w: number, h: number, flipped: boolean, mirrored = false) {
+function drawStraightened(src: HTMLCanvasElement, box: Box, w: number, h: number, flipped: boolean) {
   const ctx = scratchContext(w, h)
   ctx.translate(w / 2, h / 2)
   if (flipped) ctx.rotate(Math.PI)
-  // Text seen through glass from behind is a mirror image: turn it back left to right.
-  if (mirrored) ctx.scale(-1, 1)
   ctx.scale(w / box.length, h / box.thickness)
   ctx.rotate(-box.angle)
   ctx.translate(-box.cx, -box.cy)
