@@ -21,7 +21,8 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "check": "tsc -p tsconfig.json --noEmit",
-    "lab": "node scripts/copy-assets.mjs lab/public/camsense && vite --config lab/vite.config.ts"
+    "lab": "node scripts/copy-assets.mjs lab/public/camsense && vite --config lab/vite.config.ts",
+    "prepare": "tsc -p tsconfig.json"
   },
   "dependencies": {
     "barcode-detector": "^3.2.3",
