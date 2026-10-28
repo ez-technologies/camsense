@@ -1,6 +1,6 @@
 {
   "name": "camsense",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Camera recognition for the browser: text, barcodes and the sharpest photo, on the phone",
   "type": "module",
   "license": "MIT",

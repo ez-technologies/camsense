@@ -4,3 +4,4 @@ data/
 .env*
 lab/public/camsense/
 lab/dist/
+lab/public/research/

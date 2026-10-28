@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { cleanDigits, ctcDecode } from './ctc'
-import { boxCorners, chooseBoxes, dbBoxes, distanceToBox, inTextOrder, joinLineParts } from './engine'
+import { boxCorners, chooseBoxes, dbBoxes, distanceToBox, groupLines, inTextOrder, joinLineParts } from './engine'
 import { laplacianVariance, preprocess } from './imageops'
 
 describe('ctcDecode', () => {
@@ -180,5 +180,22 @@ describe('chooseBoxes', () => {
 
   it('precision reads nothing when no line is near the crosshair', () => {
     expect(chooseBoxes(boxes, { focus: { x: 100, y: 400 }, maxBoxes: 12, onlyAtFocus: true })).toEqual([])
+  })
+})
+
+describe('groupLines', () => {
+  const word = (text: string, cx: number, cy: number) => ({
+    text,
+    rotation: 0,
+    box: { cx, cy, thickness: 20, angle: 0, length: 60, x: 0, y: 0, w: 0, h: 0, score: 1 },
+  })
+  const words = [word('B', 200, 52), word('A', 100, 50), word('D', 200, 101), word('C', 100, 99)]
+
+  it('left to right: rows top to bottom, words left to right', () => {
+    expect(groupLines(words).map((l) => l.text)).toEqual(['A B', 'C D'])
+  })
+
+  it('right to left (Hebrew): words right to left', () => {
+    expect(groupLines(words, true).map((l) => l.text)).toEqual(['B A', 'D C'])
   })
 })

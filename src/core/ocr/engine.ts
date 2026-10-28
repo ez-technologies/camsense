@@ -94,13 +94,37 @@ export function distanceToBox(p: { x: number; y: number }, b: Pick<Box, 'cx' | '
   return Math.hypot(Math.max(0, along), Math.max(0, across))
 }
 
-const loading = new Map<boolean, Promise<Engine>>()
+/**
+ * A set of PaddleOCR-family models the engine runs: a text detector, a recognizer (CTC, 48 pixels
+ * high), its character list, and optionally the direction model. Files are looked up under the assets
+ * folder (or are full URLs).
+ */
+export interface ModelSet {
+  name: string
+  det: string
+  rec: string
+  /** One character per line; the recognizer's classes are: blank, these characters, then a space. */
+  dict: string
+  cls?: string
+  /** Detection: probability threshold, box score threshold, and how much each box is grown. */
+  db?: { thresh?: number; boxThresh?: number; unclip?: number }
+  /** Right-to-left script (Hebrew): words on a row are ordered right to left. */
+  rtl?: boolean
+}
+
+/** The default: PP-OCRv4 detection and PP-OCRv3 English recognition, for labels and serials. */
+export const LATIN_LABELS: ModelSet = { name: 'latin-labels', det: 'det.onnx', rec: 'rec.onnx', dict: 'en_dict.txt', cls: 'cls.onnx' }
+
+const loading = new Map<string, Promise<Engine>>()
 
 /** `gpu`: run the models on the graphics processor where the browser offers WebGPU. */
-export function loadEngine(gpu = false): Promise<Engine> {
-  if (!loading.has(gpu)) loading.set(gpu, Engine.create(gpu))
-  return loading.get(gpu)!
+export function loadEngine(gpu = false, models: ModelSet = LATIN_LABELS): Promise<Engine> {
+  const key = `${models.name}|${gpu}`
+  if (!loading.has(key)) loading.set(key, Engine.create(gpu, models))
+  return loading.get(key)!
 }
+
+const url = (f: string) => (/^(https?:)?\/\//.test(f) || f.startsWith('/') ? f : `${BASE}${f}`)
 
 /** A quick check (no download): does this browser offer a usable graphics processor? */
 export async function hasWebGpu(): Promise<boolean> {
@@ -135,6 +159,7 @@ export class Engine {
   private rec: Ort.InferenceSession
   private dict: string[]
   private cls: Ort.InferenceSession | null
+  readonly models: ModelSet
 
   private constructor(
     ort: OrtModule,
@@ -142,7 +167,9 @@ export class Engine {
     rec: Ort.InferenceSession,
     dict: string[],
     cls: Ort.InferenceSession | null,
+    models: ModelSet,
   ) {
+    this.models = models
     this.ort = ort
     this.det = det
     this.rec = rec
@@ -150,7 +177,7 @@ export class Engine {
     this.cls = cls
   }
 
-  static async create(gpu: boolean): Promise<Engine> {
+  static async create(gpu: boolean, models: ModelSet = LATIN_LABELS): Promise<Engine> {
     const t0 = performance.now()
     const useGpu = gpu && (await hasWebGpu())
     // Two builds of the runtime: the WebGPU one carries its own (larger) WebAssembly file.
@@ -164,16 +191,17 @@ export class Engine {
       executionProviders: useGpu ? ['webgpu', 'wasm'] : ['wasm'],
       graphOptimizationLevel: 'all',
     }
-    const create = (name: string) => ort.InferenceSession.create(`${BASE}${name}.onnx`, opts)
-    const dictText = fetch(`${BASE}en_dict.txt`).then((r) => r.text())
+    const create = (file: string) => ort.InferenceSession.create(url(file), opts)
+    const dictText = fetch(url(models.dict)).then((r) => r.text())
+    const cls = () => (models.cls ? create(models.cls).catch(() => null) : Promise.resolve(null))
     // WebGPU builds one model at a time; on the main processor they load together.
     // Without the direction model, doubtful lines are read both ways round instead.
-    const [det, rec, cls] = useGpu
-      ? [await create('det'), await create('rec'), await create('cls').catch(() => null)]
-      : await Promise.all([create('det'), create('rec'), create('cls').catch(() => null)])
-    // The English model's classes: blank, the dictionary, then a space.
-    const dict = [...(await dictText).split('\n').filter((l) => l.length > 0), ' ']
-    const engine = new Engine(ort, det, rec, dict, cls)
+    const [det, rec, dirModel] = useGpu
+      ? [await create(models.det), await create(models.rec), await cls()]
+      : await Promise.all([create(models.det), create(models.rec), cls()])
+    // The recognizer's classes: blank, the dictionary, then a space.
+    const dict = [...(await dictText).split(/\r?\n/).filter((l) => l.length > 0), ' ']
+    const engine = new Engine(ort, det, rec, dict, dirModel, models)
     engine.backend = useGpu ? 'webgpu' : 'wasm'
     if (useGpu) {
       // The graphics processor builds its programs on a model's first run: do it now, not in a scan.
@@ -222,7 +250,7 @@ export class Engine {
       }
     }
     this.last = { detMs: Math.round(t1 - t0), recMs: Math.round(performance.now() - t1), boxes: boxes.length, recs }
-    return focus ? reads.sort((a, b) => a.dist! - b.dist!) : inTextOrder(reads)
+    return focus ? reads.sort((a, b) => a.dist! - b.dist!) : inTextOrder(reads, this.models.rtl)
   }
 
   private async detect(canvas: HTMLCanvasElement, limit: number): Promise<Box[]> {
@@ -241,7 +269,8 @@ export class Engine {
     }
     const out = await this.det.run({ [this.det.inputNames[0]]: new this.ort.Tensor('float32', input, [1, 3, h, w]) })
     const prob = out[this.det.outputNames[0]].data as Float32Array
-    return joinLineParts(dbBoxes(prob, w, h, canvas.width / w, canvas.height / h))
+    const db = this.models.db ?? {}
+    return joinLineParts(dbBoxes(prob, w, h, canvas.width / w, canvas.height / h, db.thresh, db.boxThresh, db.unclip))
   }
 
   /**
@@ -309,12 +338,35 @@ export function textAxes(reads: Pick<TextRead, 'box' | 'rotation'>[]) {
   }
 }
 
-/** Reads in the order a person reads the label: line by line, each left to right. */
-export function inTextOrder<T extends Pick<TextRead, 'box' | 'rotation'>>(reads: T[]): T[] {
+/** Reads in the order a person reads the label: line by line, each left to right (right to left: `rtl`). */
+export function inTextOrder<T extends Pick<TextRead, 'box' | 'rotation'>>(reads: T[], rtl = false): T[] {
   const ax = textAxes(reads)
   return [...reads].sort((p, q) => {
     const dv = ax.across(p.box) - ax.across(q.box)
-    return Math.abs(dv) < ax.row ? ax.along(p.box) - ax.along(q.box) : dv
+    if (Math.abs(dv) >= ax.row) return dv
+    const da = ax.along(p.box) - ax.along(q.box)
+    return rtl ? -da : da
+  })
+}
+
+/**
+ * Joins word reads into the lines of a page: words whose centres are within half a word's height
+ * across the text are one line; each line's words in reading order (right to left for `rtl`),
+ * lines top to bottom.
+ */
+export function groupLines<T extends Pick<TextRead, 'box' | 'rotation' | 'text'>>(reads: T[], rtl = false): { text: string; words: T[] }[] {
+  const ax = textAxes(reads)
+  const sorted = [...reads].sort((p, q) => ax.across(p.box) - ax.across(q.box))
+  const lines: T[][] = []
+  for (const r of sorted) {
+    const line = lines[lines.length - 1]
+    const ref = line ? line.reduce((a, w) => a + ax.across(w.box), 0) / line.length : 0
+    if (line && Math.abs(ax.across(r.box) - ref) < ax.row) line.push(r)
+    else lines.push([r])
+  }
+  return lines.map((ws) => {
+    const words = [...ws].sort((p, q) => (rtl ? ax.along(q.box) - ax.along(p.box) : ax.along(p.box) - ax.along(q.box)))
+    return { text: words.map((w) => w.text).join(' '), words }
   })
 }
 
