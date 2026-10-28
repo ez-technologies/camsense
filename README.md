@@ -89,7 +89,8 @@ All of them: `ScanOptions` in `src/core/options.ts`.
 
 `camsense-ready`, `camsense-result`, `camsense-label` (continuous text), `camsense-code` (continuous
 barcodes), `camsense-steady`, `camsense-progress` (`{ phase, done, total }`; phase `null` when done),
-`camsense-error`.
+`camsense-error`, `camsense-paused` (the page went to the background and let the camera go; it opens
+again by itself when the page is in front, with a new `camsense-ready`).
 
 ### Pictures
 

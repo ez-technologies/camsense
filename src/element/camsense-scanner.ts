@@ -180,7 +180,10 @@ export class CamsenseScanner extends HTMLElement {
   private cameraNote = ''
 
   connectedCallback() {
-    if (this.shadowRoot) return
+    if (this.shadowRoot) {
+      document.addEventListener('visibilitychange', this.onVisibility)
+      return
+    }
     const root = this.attachShadow({ mode: 'open' })
     root.innerHTML = `<style>${STYLE}</style><video playsinline muted></video><div class="aim" part="aim"></div>
       <div class="cross" part="cross" hidden></div><div class="boxes" part="boxes"></div><div class="flash" part="flash"></div>
@@ -202,12 +205,36 @@ export class CamsenseScanner extends HTMLElement {
       if (e.buttons && this.getAttribute('touch') !== 'none') this.aimAt(this.pointIn(e))
     })
     this.applyLayout()
+    document.addEventListener('visibilitychange', this.onVisibility)
   }
 
   disconnectedCallback() {
+    document.removeEventListener('visibilitychange', this.onVisibility)
+    this.release()
+  }
+
+  /**
+   * A page in the background lets the camera go, so another tab or app can open it; it comes back
+   * when the page is in front again (if it was open). Fires `camsense-paused`, then `camsense-ready`.
+   */
+  private onVisibility = () => {
+    if (document.hidden) {
+      if (!this.track) return
+      this.release()
+      this.resume = true
+      this.emit('camsense-paused', {})
+    } else if (this.resume) {
+      this.resume = false
+      this.start()
+    }
+  }
+  private resume = false
+
+  private release() {
     this.stop()
     this.track?.stop()
     this.track = null
+    if (this.video) this.video.srcObject = null
   }
 
   attributeChangedCallback() {

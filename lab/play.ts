@@ -201,6 +201,11 @@ cam.addEventListener('camsense-ready', () => {
     tess ??= createWorker(['heb', 'eng'])
   }
 })
+// Another tab or app may use the camera meanwhile; it comes back by itself when this page is in front.
+cam.addEventListener('camsense-paused', () => {
+  ready = false
+  render()
+})
 cam.addEventListener('camsense-error', (e) => {
   status.textContent = `${t().error}: ${(e as CustomEvent).detail.message}`
 })
