@@ -91,25 +91,25 @@ export function saveProbe(cameras: CameraChoice[] | null) {
 /** `height` is the short side asked for (1080, 1440, 2160); the phone may give less. */
 export async function openCamera(video: HTMLVideoElement, deviceId: string, height: number): Promise<MediaStreamTrack> {
   // The camera can still be held for a moment by a page that just closed it (or reloaded):
-  // "Could not start video source". Try again a few times before giving up.
+  // "Could not start video source". Try once more before giving up (the caller then asks for less).
   for (let attempt = 1; ; attempt++) {
     try {
       return await openOnce(video, deviceId, height)
     } catch (e) {
-      if ((e as Error).name !== 'NotReadableError' || attempt >= 4) throw e
+      if ((e as Error).name !== 'NotReadableError' || attempt >= 2) throw e
       await new Promise((r) => setTimeout(r, 600 * attempt))
     }
   }
 }
 
 async function openOnce(video: HTMLVideoElement, deviceId: string, height: number): Promise<MediaStreamTrack> {
-  const width = Math.round((height * 16) / 9)
+  // height 0: no size asked for at all (the most a reluctant browser will still grant).
+  const size = height > 0 ? { width: { ideal: Math.round((height * 16) / 9) }, height: { ideal: height } } : {}
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
     video: {
       ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
-      width: { ideal: width },
-      height: { ideal: height },
+      ...size,
     },
   })
   video.srcObject = stream

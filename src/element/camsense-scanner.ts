@@ -55,7 +55,7 @@ export interface Metadata {
   startedAt: string
   ms: number
   device: string
-  camera: { label: string; resolution: string; minFocus: number | null; torch: boolean }
+  camera: { label: string; opened: string; resolution: string; minFocus: number | null; torch: boolean }
   backend: 'webgpu' | 'wasm' | 'none'
   target: Target
   options: ScanOptions
@@ -138,6 +138,8 @@ export class CamsenseScanner extends HTMLElement {
   private precision: Precision = { point: null, only: false }
   private chosen: { fx: number; fy: number } | null = null
   private focusSearch: FocusSearch | null = null
+  /** Which camera request worked (see the ladder in openCamera). */
+  private cameraNote = ''
 
   connectedCallback() {
     if (this.shadowRoot) return
@@ -239,6 +241,8 @@ export class CamsenseScanner extends HTMLElement {
       if (this.task === 'barcode') await barcodeReader(this.formats())
       this.emit('camsense-ready', {
         camera: this.track?.label ?? '',
+        opened: this.cameraNote,
+        resolution: this.track ? trackResolution(this.track) : '',
         torch: !!this.caps.torch,
         backend: this.engine?.backend ?? 'none',
       })
@@ -379,6 +383,7 @@ export class CamsenseScanner extends HTMLElement {
       device: navigator.userAgent,
       camera: {
         label: this.track?.label ?? '',
+        opened: this.cameraNote,
         resolution: this.track ? trackResolution(this.track) : '',
         minFocus: this.caps.focusDistance?.min ?? null,
         torch: !!(this.track?.getSettings() as { torch?: boolean } | undefined)?.torch,
@@ -404,13 +409,27 @@ export class CamsenseScanner extends HTMLElement {
     }
     // Close work (labels, barcodes) uses the camera that focuses closest; further away, the default.
     const id = s.cameraId || (s.distance[0] < 0.25 ? closestFocusing(probe) : '')
-    try {
-      this.track = await openCamera(this.video, id, s.cameraHeight)
-    } catch (e) {
-      if (!id) throw e
-      saveProbe(null)
-      this.track = await openCamera(this.video, '', s.cameraHeight)
+    // Some browsers (in-app ones especially) refuse a chosen camera or a large picture: ask for less,
+    // step by step, and say which request worked.
+    const ladder: [string, number, string][] = [
+      [id, s.cameraHeight, id ? 'chosen camera' : 'default camera'],
+      ...(id ? ([['', s.cameraHeight, 'default camera']] as [string, number, string][]) : []),
+      ...(s.cameraHeight > 1080 ? ([['', 1080, 'default camera, 1080p']] as [string, number, string][]) : []),
+      ['', 0, 'default camera, any size'],
+    ]
+    let lastError: unknown = null
+    this.track = null
+    for (const [cam, height, note] of ladder) {
+      try {
+        this.track = await openCamera(this.video, cam, height)
+        this.cameraNote = note
+        break
+      } catch (e) {
+        lastError = e
+        if (cam) saveProbe(null)
+      }
     }
+    if (!this.track) throw lastError
     this.caps = capabilities(this.track)
     await setHardware(this.track, s.hardware, s.exposureComp)
     this.focusSearch = null
