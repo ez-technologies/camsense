@@ -104,6 +104,8 @@ export interface FocusStackResult {
   stacked: Picture
   /** Share of the picture each frame gave most of. */
   share: number[]
+  /** How far each frame had moved (the hand), in pixels, before it was lined up. */
+  shifts: { dx: number; dy: number }[]
   ms: number
 }
 
@@ -328,6 +330,13 @@ export class CamsenseScanner extends HTMLElement {
       const video = this.video
       const nextFrame = () =>
         new Promise<void>((r) => ('requestVideoFrameCallback' in video ? video.requestVideoFrameCallback(() => r()) : setTimeout(r, 33)))
+      // Start once the phone is still (at most 2 seconds of waiting).
+      await startMotion()
+      const gate = new SteadyGate(s)
+      for (const t = performance.now(); performance.now() - t < 2000; ) {
+        if (gate.check(grab(video, frameRegion(video, s), 320), performance.now()).steady) break
+        await nextFrame()
+      }
       const frames: FocusStackResult['frames'] = []
       const canvases: HTMLCanvasElement[] = []
       for (let i = 0; i < steps; i++) {
@@ -348,7 +357,14 @@ export class CamsenseScanner extends HTMLElement {
       const merged = stackFocus(canvases)
       merged.share.forEach((_, i) => (frames[i].sharpness = merged.share[i]))
       signal(this.audio)
-      return { focusControl: control, frames, stacked: new Picture(merged.canvas), share: merged.share, ms: Math.round(performance.now() - t0) }
+      return {
+        focusControl: control,
+        frames,
+        stacked: new Picture(merged.canvas),
+        share: merged.share,
+        shifts: merged.shifts,
+        ms: Math.round(performance.now() - t0),
+      }
     } finally {
       this.running = false
       if (this.track && canSweepFocus(this.caps)) setFocus(this.track, null)

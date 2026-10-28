@@ -52,6 +52,113 @@ export function blendWeights(sharp: Float32Array[], tx: number, ty: number, powe
   return out
 }
 
+/**
+ * How far `img` has moved against `ref` (both grey, same size), in pixels, for a hand that shook a
+ * little between frames. Edges are compared rather than brightness, since frames focused differently
+ * differ in brightness detail but not in where the edges are. Coarse to fine: a search on a picture an
+ * eighth the size, then refined at a quarter, a half and full size.
+ */
+export function estimateShift(ref: Float32Array, img: Float32Array, w: number, h: number, maxShift = 48): { dx: number; dy: number } {
+  const pyramid = new Map<number, { a: Float32Array; b: Float32Array; sw: number; sh: number }>()
+  const level = (f: number) => {
+    if (!pyramid.has(f)) {
+      const sw = Math.floor(w / f)
+      const sh = Math.floor(h / f)
+      pyramid.set(f, { a: edges(shrink(ref, w, h, f), sw, sh), b: edges(shrink(img, w, h, f), sw, sh), sw, sh })
+    }
+    return pyramid.get(f)!
+  }
+  /** Mean difference of edges with `img` moved by (ox, oy) at scale 1/f. */
+  const cost = (f: number, ox: number, oy: number, margin: number) => {
+    const { a, b, sw, sh } = level(f)
+    let sum = 0
+    let count = 0
+    for (let y = margin + 2; y < sh - margin - 2; y += 2) {
+      for (let x = margin + 2; x < sw - margin - 2; x += 2) {
+        const yy = y + oy
+        const xx = x + ox
+        if (yy < 0 || yy >= sh || xx < 0 || xx >= sw) continue
+        sum += Math.abs(a[y * sw + x] - b[yy * sw + xx])
+        count++
+      }
+    }
+    return sum / Math.max(1, count)
+  }
+  /** Around a guess (pixels of full size), the best shift at scale 1/f within ±r steps. */
+  const around = (g: { dx: number; dy: number }, f: number, r: number) => {
+    const cx = Math.round(g.dx / f)
+    const cy = Math.round(g.dy / f)
+    let best = { dx: g.dx, dy: g.dy, c: Infinity }
+    for (let oy = cy - r; oy <= cy + r; oy++)
+      for (let ox = cx - r; ox <= cx + r; ox++) {
+        const v = cost(f, ox, oy, r)
+        if (v < best.c) best = { dx: ox * f, dy: oy * f, c: v }
+      }
+    return best
+  }
+  /** Keeps the best few guesses at each finer scale, so full size is only reached by three. */
+  const narrow = (guesses: { dx: number; dy: number }[]) => {
+    let g = guesses.map((k) => around(k, 4, 2)).sort((p, q) => p.c - q.c).slice(0, 6)
+    g = g.map((k) => around(k, 2, 2)).sort((p, q) => p.c - q.c).slice(0, 3)
+    return g.map((k) => around(k, 1, 1))
+  }
+  // Coarse search at an eighth of the size, keeping several candidates: rows of text repeat, and at
+  // this size a shift of one whole line can fit better than the true one only because it lands on the
+  // coarse grid. Each candidate is refined to full size before choosing.
+  const range = Math.ceil(maxShift / 8)
+  const coarse: { x: number; y: number; c: number }[] = []
+  for (let oy = -range; oy <= range; oy++) for (let ox = -range; ox <= range; ox++) coarse.push({ x: ox, y: oy, c: cost(8, ox, oy, range) })
+  coarse.sort((p, q) => p.c - q.c)
+  // The best few, and always every small shift (up to 16 pixels each way): on a page of text many far
+  // shifts look alike and can crowd the true, small one out of the best few.
+  const picked = [...coarse.slice(0, 8), ...coarse.filter((k) => Math.abs(k.x) <= 2 && Math.abs(k.y) <= 2)]
+  const unique = picked.filter((k, i) => picked.findIndex((q) => q.x === k.x && q.y === k.y) === i)
+  const finals = narrow(unique.map((k) => ({ dx: k.x * 8, dy: k.y * 8 })))
+  // A hand that shakes moves little: of the shifts within 3% of the best, the smallest wins.
+  const bestCost = Math.min(...finals.map((f) => f.c))
+  const chosen = finals
+    .filter((f) => f.c <= bestCost * 1.03)
+    .reduce((p, q) => (Math.hypot(q.dx, q.dy) < Math.hypot(p.dx, p.dy) ? q : p))
+  return { dx: chosen.dx, dy: chosen.dy }
+}
+
+function shrink(g: Float32Array, w: number, h: number, f: number): Float32Array {
+  const sw = Math.floor(w / f)
+  const sh = Math.floor(h / f)
+  const out = new Float32Array(sw * sh)
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      let sum = 0
+      for (let j = 0; j < f; j++) for (let i = 0; i < f; i++) sum += g[(y * f + j) * w + x * f + i]
+      out[y * sw + x] = sum / (f * f)
+    }
+  }
+  return out
+}
+
+function edges(g: Float32Array, w: number, h: number): Float32Array {
+  const out = new Float32Array(w * h)
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x
+      out[i] = Math.abs(g[i + 1] - g[i - 1]) + Math.abs(g[i + w] - g[i - w])
+    }
+  }
+  return out
+}
+
+/** A copy of `c` moved back by (dx, dy), so it lines up with the reference frame. */
+function shifted(c: HTMLCanvasElement, dx: number, dy: number): HTMLCanvasElement {
+  if (!dx && !dy) return c
+  const o = document.createElement('canvas')
+  o.width = c.width
+  o.height = c.height
+  const ctx = o.getContext('2d', { willReadFrequently: true })!
+  ctx.drawImage(c, 0, 0)
+  ctx.drawImage(c, -dx, -dy)
+  return o
+}
+
 function grayOf(c: HTMLCanvasElement): Float32Array {
   const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data
   const g = new Float32Array(c.width * c.height)
@@ -59,11 +166,18 @@ function grayOf(c: HTMLCanvasElement): Float32Array {
   return g
 }
 
-/** Merges frames of one size; the phone is assumed steady (no alignment). */
-export function stackFocus(frames: HTMLCanvasElement[], tile = 32): StackResult {
-  const w = frames[0].width
-  const h = frames[0].height
-  const sharp = frames.map((f) => tileSharpness(grayOf(f), w, h, tile))
+/**
+ * Merges frames of one size. A hand that shook a little between frames is undone first: each frame is
+ * moved to line up with the middle one (`align`, up to `maxShift` pixels).
+ */
+export function stackFocus(input: HTMLCanvasElement[], tile = 32, align = true, maxShift = 48): StackResult & { shifts: { dx: number; dy: number }[] } {
+  const w = input[0].width
+  const h = input[0].height
+  const grays = input.map(grayOf)
+  const ref = Math.floor(input.length / 2)
+  const shifts = input.map((_, i) => (align && i !== ref ? estimateShift(grays[ref], grays[i], w, h, maxShift) : { dx: 0, dy: 0 }))
+  const frames = input.map((f, i) => shifted(f, shifts[i].dx, shifts[i].dy))
+  const sharp = frames.map((f, i) => tileSharpness(shifts[i].dx || shifts[i].dy ? grayOf(f) : grays[i], w, h, tile))
   const { tx, ty } = sharp[0]
   const weights = blendWeights(
     sharp.map((s) => s.values),
@@ -115,5 +229,5 @@ export function stackFocus(frames: HTMLCanvasElement[], tile = 32): StackResult 
     choice.push(best)
     share[best]++
   }
-  return { canvas: out, choice, tilesX: tx, tilesY: ty, share: share.map((c) => Math.round((c / (tx * ty)) * 100) / 100) }
+  return { canvas: out, choice, tilesX: tx, tilesY: ty, share: share.map((c) => Math.round((c / (tx * ty)) * 100) / 100), shifts }
 }
